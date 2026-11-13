@@ -1,0 +1,152 @@
+#' View a data frame or parquet file in the browser
+#'
+#' Creates an interactive table that runs entirely in the browser. The data is
+#' embedded as snappy-compressed parquet and decoded client-side, so the
+#' result needs no server: pick columns from a searchable list, filter each
+#' column, sort, search and export the filtered rows.
+#'
+#' Printing the result shows it in the RStudio viewer or a browser. It can
+#' also be placed in R Markdown and Quarto documents, used in Shiny with
+#' [pqviewOutput()], or written to one portable file with [save_pqview()].
+#'
+#' @param data A data frame (or something [as.data.frame()] understands), or
+#'   the path to a `.parquet` file.
+#' @param columns Names of the columns shown at first. `NULL` shows the first
+#'   ten; `character(0)` starts with none selected.
+#' @param title Optional title shown in the toolbar. It is also used as the
+#'   file name for CSV exports.
+#' @param digits Significant digits used to display non-integer numbers.
+#'   Exports always keep full precision.
+#' @param where Optional initial WHERE condition for the query bar, such as
+#'   `"age > 30 AND region IN ('West', 'South')"`. It is checked in the
+#'   browser, which shows any syntax error.
+#' @param theme Starting theme: `"auto"` follows the reader's system setting;
+#'   `"light"` and `"dark"` force one. Readers can switch with the toolbar
+#'   button, and their choice is remembered in their browser.
+#' @param font Starting font for the table: `"sans"` or `"mono"`. Readers can
+#'   switch with the toolbar's Mono button.
+#' @param top_offset Space in pixels above the toolbar when the viewer fills a
+#'   page of its own (a saved file or a browser tab), so browser chrome such as
+#'   Safari's full-screen toolbar does not cover it. Not used in the RStudio
+#'   viewer, documents or Shiny. Use `0` for none.
+#' @param rownames Include row names as a first column? `NULL` includes them
+#'   only when the rows are named (as in `mtcars`).
+#' @param max_bytes Warn when the embedded parquet data is larger than this
+#'   many bytes. Everything is held in browser memory, so very large files
+#'   will be slow to open.
+#' @param width,height Widget size. The default fills the page when viewed on
+#'   its own and is 600px tall inside a document.
+#' @param elementId Optional element id for the widget.
+#'
+#' @return An htmlwidget.
+#' @section In the viewer:
+#' * **Columns** opens a searchable list of every column with its type,
+#'   distinct count, share missing and range.
+#' * Each header has a filter (range, checklist, text or TRUE/FALSE) and an
+#'   options button for the match mode (contains, regular expression, exact),
+#'   case sensitivity, "everything but" (invert, missing values included) and
+#'   missing values (show, hide, only).
+#' * **WHERE** takes a SQL condition over any column, for example
+#'   `comment REGEXP 'review|call' AND income IS NOT NULL`. Click `?` for the
+#'   syntax.
+#' * The search box has regular-expression (`.*`) and `NOT` toggles.
+#' * Toolbar switches change the theme and turn on a monospace font.
+#'
+#' @examples
+#' if (interactive()) {
+#'   pqview(mtcars)
+#'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris")
+#'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono")
+#' }
+#' @export
+pqview <- function(data,
+                   columns = NULL,
+                   title = NULL,
+                   digits = 7,
+                   where = NULL,
+                   theme = c("auto", "light", "dark"),
+                   font = c("sans", "mono"),
+                   top_offset = 56,
+                   rownames = NULL,
+                   max_bytes = 50e6,
+                   width = NULL,
+                   height = NULL,
+                   elementId = NULL) {
+  theme <- match.arg(theme)
+  font <- match.arg(font)
+  stopifnot(
+    is.null(columns) || is.character(columns),
+    is.null(title) || (is.character(title) && length(title) == 1L),
+    is.null(where) || (is.character(where) && length(where) == 1L && !is.na(where)),
+    is.numeric(digits), length(digits) == 1L, digits >= 1, digits <= 17,
+    is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0
+  )
+
+  enc <- encode_data(data, rownames = rownames)
+  if (length(enc$bytes) > max_bytes) {
+    warning(
+      "The embedded data is ", format_bytes(length(enc$bytes)),
+      ", which may be slow to open in a browser. ",
+      "Consider selecting fewer columns or rows first.",
+      call. = FALSE
+    )
+  }
+
+  x <- list(
+    data = gsub("\n", "", jsonlite::base64_enc(enc$bytes), fixed = TRUE),
+    meta = enc$meta,
+    digits = digits,
+    theme = theme,
+    font = font,
+    top_offset = top_offset,
+    nrow = enc$nrow,
+    ncol = enc$ncol
+  )
+  if (!is.null(columns)) x$columns <- as.list(columns)
+  if (!is.null(title)) x$title <- title
+  if (!is.null(where) && nzchar(trimws(where))) x$where <- where
+
+  htmlwidgets::createWidget(
+    name = "pqview",
+    x = x,
+    width = width,
+    height = height,
+    package = "pqview",
+    elementId = elementId,
+    sizingPolicy = htmlwidgets::sizingPolicy(
+      defaultWidth = "100%",
+      defaultHeight = 600,
+      padding = 0,
+      browser.fill = TRUE,
+      viewer.fill = TRUE,
+      knitr.figure = FALSE,
+      knitr.defaultWidth = "100%",
+      knitr.defaultHeight = 600
+    )
+  )
+}
+
+#' Shiny bindings for pqview
+#'
+#' Output and render functions for using [pqview()] in Shiny applications.
+#'
+#' @param outputId Output variable to read from.
+#' @param width,height Must be a valid CSS unit (like `"100%"` or `"600px"`).
+#' @param expr An expression that returns a [pqview()] widget.
+#' @param env The environment in which to evaluate `expr`.
+#' @param quoted Is `expr` a quoted expression?
+#'
+#' @return `pqviewOutput()` returns a Shiny output element; `renderPqview()`
+#'   returns a render function.
+#' @name pqview-shiny
+#' @export
+pqviewOutput <- function(outputId, width = "100%", height = "600px") {
+  htmlwidgets::shinyWidgetOutput(outputId, "pqview", width, height, package = "pqview")
+}
+
+#' @rdname pqview-shiny
+#' @export
+renderPqview <- function(expr, env = parent.frame(), quoted = FALSE) {
+  if (!quoted) expr <- substitute(expr)
+  htmlwidgets::shinyRenderWidget(expr, pqviewOutput, env, quoted = TRUE)
+}

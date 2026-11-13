@@ -1,0 +1,9 @@
+^srcjs$
+^\.git$
+^\.gitignore$
+^README\.md$
+^examples$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^\.gitattributes$

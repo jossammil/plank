@@ -1,0 +1,4 @@
+# Keep the same line endings on every platform (Windows checkouts included).
+* text=auto eol=lf
+*.parquet binary
+*.png binary
