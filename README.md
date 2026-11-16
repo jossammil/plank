@@ -37,8 +37,8 @@ pqview("big_table.parquet", columns = c("id", "state", "amount"))
 save_pqview(my_data, "my_data.html", title = "My data",
             notes = "Extract of 2024-06-30; one row per visit", open = TRUE)
 
-# Start with a query, a monospace font and a dark theme
-pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono", theme = "dark")
+# Start with a query, a proportional font (monospace is the default) and a dark theme
+pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
 ```
 
 It is an htmlwidget, so it also works in R Markdown and Quarto chunks
@@ -60,8 +60,8 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   and max for numbers and dates, and counts for every value or range, kept
   and total). Columns in the table are listed first, in table order: a
   newly ticked column joins the right edge, and dragging any item places it
-  in the table (Alt+Up/Down also reorders). Drag the panel's right edge, or
-  click **Wider**, to give the list more room.
+  in the table (Alt+Up/Down also reorders). Drag the panel's right edge to
+  give the list more room (double-click the edge to widen or narrow it).
 - **Per-column filters** under each header: min/max for numbers, from/to for
   dates (`2024`, `2024-03` or `2024-03-15` all work), a checklist for factors
   and low-cardinality text, a text box for other text, and TRUE/FALSE for
@@ -85,31 +85,41 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 - **Value finder with regex.** A checklist's "Find value" box has a `.*`
   toggle; "Only these" checks just the values that match.
 - **WHERE query bar.** A SQL condition over any column, shown or not, applied
-  on top of the column filters. `NOT` inverts it; `?` lists examples.
-  **Full query** shows every column filter, the search and the WHERE
-  condition combined as one condition, which you can copy, or turn into
-  the WHERE text to edit (it selects exactly the same rows).
+  on top of the column filters. `NOT` inverts it; `?` lists examples. The
+  toolbar's **WHERE** switch shows or hides the bar, and **See Query** shows
+  every column filter, the search and the WHERE condition combined as one
+  condition, which you can copy, or turn into the WHERE text to edit (it
+  selects exactly the same rows).
 - **Global search** across the visible columns, with `.*` (regular
   expression) and `NOT` toggles.
 - **Sorting.** Click a header to sort; shift-click to add more sort keys.
   Missing values always sort last.
 - **Marker columns.** **Mark** creates a new column (say `review`) and sets
-  a value such as `yes` on every filtered row; clicking a cell in a marker
-  column sets, changes or clears a single row. Marker columns filter, sort
-  and work in WHERE queries like any other column. Marks are saved in the
-  reader's browser and included in the CSV export.
-- **Export CSV** of the filtered rows and visible columns, at full precision.
-  When a marker column is included, the file starts with a `row` column (the
-  original row number) so the marks can be joined back in R:
+  a value (`1` unless you type another) on every filtered row; clicking a
+  cell in a marker column sets, changes or clears a single row. Marker
+  columns filter, sort and work in WHERE queries like any other column.
+  Marks are saved in the reader's browser and included in exports.
+- **Export** the filtered rows and visible columns, written in the browser:
+
+  | Format | Notes |
+  |---|---|
+  | CSV | Full numeric precision |
+  | Excel (.xlsx) | Bold, frozen header with filter buttons; real numbers, dates and logicals |
+  | R data (.rds) | `readRDS()` gives back integers, factors, Dates and date-times in their time zone |
+  | Parquet | Snappy-compressed and typed; date-times are stored as UTC instants |
+  | Clipboard | Tab-separated with a header row, ready to paste into a spreadsheet |
+
+  When a marker column is included, the export starts with a `row` column
+  (the original row number) so the marks can be joined back in R:
 
   ```r
-  marks <- read.csv("my_data.csv")
+  marks <- readRDS("my_data.rds")
   my_data$review <- NA
   my_data$review[marks$row] <- marks$review
   ```
-- **Switches** for the theme (auto, light, dark), a monospace font, and
-  showing the query bar. Each reader's choices are remembered in their
-  browser.
+- **Switches** for the WHERE bar, See Query, a monospace font (on by
+  default) and the theme (auto, light, dark). Each reader's choices are
+  remembered in their browser.
 - When the viewer fills a page of its own, it leaves `top_offset` pixels
   (default 56) above the toolbar, so browser chrome such as Safari's
   full-screen toolbar does not cover it.
@@ -156,18 +166,21 @@ table (11 MB file) in Chrome on a laptop:
 - Everything is held in browser memory, which is what makes it instant. It is
   built for tables up to a few hundred thousand rows; `pqview()` warns when
   the embedded data passes 50 MB.
-- The HTML file is about 1.33x the parquet size plus roughly 100 KB.
+- The HTML file is about 1.33x the parquet size plus roughly 240 KB.
 - List columns are shown as JSON text. Parquet files that use codecs other
   than snappy, or that have nested columns, are rewritten on the R side first.
 - Date-times are shown in the column's time zone, to the millisecond.
 - The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates.
 - Marks live in the browser that made them (keyed to the data); clearing site
-  data removes them, so export a CSV to keep them.
+  data removes them, so export the data to keep them.
+- Excel sheets hold at most 1,048,575 rows; Excel has no NaN or infinity, so
+  those values export as blank cells.
 
 ## Development
 
 The browser code lives in `srcjs/` and is bundled with
-[hyparquet](https://github.com/hyparam/hyparquet) into
+[hyparquet](https://github.com/hyparam/hyparquet) and
+[hyparquet-writer](https://github.com/hyparam/hyparquet-writer) into
 `inst/htmlwidgets/lib/pqview/pqview-core.js`. The bundle is committed, so
 Node is only needed to change the JavaScript.
 

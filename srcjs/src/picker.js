@@ -83,12 +83,7 @@ export class Picker {
           h('button', { class: 'pqv-link', type: 'button', text: 'None', onclick: () => this.setAll(false) }))),
       this.list)
 
-    // Resize from the right edge; double-click (or the button) toggles wide.
-    this.widthBtn = h('button', {
-      class: 'pqv-link pqv-pwide', type: 'button', text: 'Wider', title: 'Make the column list wider',
-      onclick: () => this.setWidth(this.width > 380 ? 270 : 480, true),
-    })
-    host.querySelector('.pqv-pactions').append(this.widthBtn)
+    // Resize from the right edge; double-click toggles a wide list.
     this.resizer = h('div', {
       class: 'pqv-presizer', role: 'separator', 'aria-orientation': 'vertical',
       title: 'Drag to resize the column list, double-click to widen or narrow it',
@@ -105,8 +100,6 @@ export class Picker {
     const max = Math.max(260, Math.min(900, (root && root.clientWidth ? root.clientWidth : 1200) * 0.7))
     this.width = Math.round(Math.max(200, Math.min(max, w)))
     this.host.style.width = this.width + 'px'
-    this.widthBtn.textContent = this.width > 380 ? 'Narrower' : 'Wider'
-    this.widthBtn.title = this.width > 380 ? 'Make the column list narrower' : 'Make the column list wider'
     if (save && this.opts.onWidth) this.opts.onWidth(this.width)
   }
 

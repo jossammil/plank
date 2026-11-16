@@ -26,5 +26,9 @@
   "region_exact_west": 24929,
   "search_regex_ala": 3932,
   "or_age_income": 51732,
-  "or_age_income_west": 12739
+  "or_age_income_west": 12739,
+  "west_income_sum": 1435638435.94,
+  "west_age_na": 748,
+  "west_visit_first": "2023-03-18",
+  "west_updated_first": "2024-02-07 10:05:03"
 }

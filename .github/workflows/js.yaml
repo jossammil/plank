@@ -40,7 +40,7 @@ jobs:
           use-public-rspm: true
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::pkgload
+          extra-packages: any::pkgload, any::readxl
       - name: Build the demo page
         run: Rscript examples/make-demo.R
       - uses: actions/setup-node@v4

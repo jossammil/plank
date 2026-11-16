@@ -15,17 +15,29 @@ function rawNumber(v) {
   return String(v)
 }
 
-/** Value text for CSV: full numeric precision, empty string when missing. */
-function csvCell(col, i) {
+/** Plain value text for export: full numeric precision, '' when missing. */
+export function cellValue(col, i) {
   if (col.isNull[i]) return ''
   switch (col.type) {
     case 'number': return rawNumber(col.num[i])
     case 'date': return formatDate(col.num[i])
     case 'datetime': return formatDateTime(col.num[i], col.zone)
     case 'boolean': return col.num[i] ? 'TRUE' : 'FALSE'
-    case 'category': return quote(col.levels[col.codes[i]])
-    default: return quote(col.str[i])
+    case 'category': return col.levels[col.codes[i]]
+    default: return col.str[i]
   }
+}
+
+function csvCell(col, i) {
+  const v = cellValue(col, i)
+  return col.type === 'category' || col.type === 'string' ? quote(v) : v
+}
+
+/** Name for the leading row-number column that does not clash with `names`. */
+export function rowColumnName(names) {
+  let name = 'row'
+  while (names.includes(name)) name = '.' + name
+  return name
 }
 
 /**
@@ -37,8 +49,7 @@ function csvCell(col, i) {
 export function toCSV(cols, view, opts = {}) {
   const rowNumbers = !!opts.rowNumbers
   const names = cols.map((c) => c.name)
-  let rowName = 'row'
-  while (names.includes(rowName)) rowName = '.' + rowName
+  const rowName = rowColumnName(names)
   const parts = [(rowNumbers ? [rowName, ...names] : names).map(quote).join(',') + '\r\n']
   const k = cols.length
   const CHUNK = 5000

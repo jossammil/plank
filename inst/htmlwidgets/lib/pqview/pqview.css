@@ -49,14 +49,15 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 12px 6px;
+  padding: 20px 12px 6px;
   background: var(--pqv-bg);
 }
 
+/* A full line of breathing room above the title on a page of its own. */
 .pqv.pqv-standalone .pqv-header {
   min-height: var(--pqv-top, 0px);
   box-sizing: border-box;
-  padding-top: 12px;
+  padding-top: 30px;
 }
 
 .pqv-heading {
@@ -708,7 +709,10 @@ select.pqv-input {
 
 /* full query */
 .pqv-full {
-  margin-top: 6px;
+  flex: none;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid var(--pqv-line);
+  background: var(--pqv-head);
 }
 
 .pqv-full[hidden] {
@@ -1478,4 +1482,71 @@ select.pqv-input {
 
 .pqv-error {
   color: var(--pqv-bad);
+}
+
+/* ---- export menu ---------------------------------------------------------- */
+
+.pqv-exportmenu {
+  width: 330px;
+}
+
+.pqv-export-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+}
+
+.pqv-export-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "label ext" "note note";
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--pqv-fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pqv-export-item:hover:not(:disabled),
+.pqv-export-item:focus-visible {
+  background: var(--pqv-hover);
+  outline: none;
+}
+
+.pqv-export-item:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.pqv-export-label {
+  grid-area: label;
+  font-weight: 600;
+}
+
+.pqv-export-ext {
+  grid-area: ext;
+  color: var(--pqv-muted);
+  font: 11px var(--pqv-mono-font);
+}
+
+.pqv-export-note {
+  grid-area: note;
+  color: var(--pqv-muted);
+  font-size: 12px;
+}
+
+.pqv-export-msg {
+  min-height: 18px;
+  padding: 2px 12px 10px;
+  color: var(--pqv-muted);
+  font-size: 12px;
+}
+
+.pqv-export-msg:empty {
+  display: none;
 }

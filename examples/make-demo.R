@@ -81,6 +81,12 @@ expected <- list(
 
   # OR column filters: (age >= 61 OR income >= 100000) AND region West
   or_age_income = sum(demo$age >= 61 | demo$income >= 100000, na.rm = TRUE),
-  or_age_income_west = sum((demo$age >= 61 | demo$income >= 100000) & demo$region == "West", na.rm = TRUE)
+  or_age_income_west = sum((demo$age >= 61 | demo$income >= 100000) & demo$region == "West", na.rm = TRUE),
+
+  # exports of region == 'West' (first 10 columns), read back in R
+  west_income_sum = sum(demo$income[demo$region == "West"], na.rm = TRUE),
+  west_age_na = sum(is.na(demo$age[demo$region == "West"])),
+  west_visit_first = format(demo$visit_date[demo$region == "West"][1]),
+  west_updated_first = format(demo$updated_at[demo$region == "West"][1], "%Y-%m-%d %H:%M:%S")
 )
 writeLines(jsonlite::toJSON(expected, auto_unbox = TRUE, digits = NA, pretty = TRUE), "examples/demo-expected.json")

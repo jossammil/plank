@@ -12,7 +12,7 @@ pqview(
   digits = 7,
   where = NULL,
   theme = c("auto", "light", "dark"),
-  font = c("sans", "mono"),
+  font = c("mono", "sans"),
   top_offset = 56,
   rownames = NULL,
   max_bytes = 5e+07,
@@ -46,8 +46,9 @@ browser, which shows any syntax error.}
 \code{"light"} and \code{"dark"} force one. Readers can switch with the toolbar
 button, and their choice is remembered in their browser.}
 
-\item{font}{Starting font for the table: \code{"sans"} or \code{"mono"}. Readers can
-switch with the toolbar's Mono button.}
+\item{font}{Starting font for the table: \code{"mono"} (the default) or
+\code{"sans"}. Readers can switch with the toolbar's Mono button, and their
+choice is remembered in their browser.}
 
 \item{top_offset}{Minimum height in pixels of the band above the toolbar
 (title, notes and data sizes) when the viewer fills a page of its own (a
@@ -85,7 +86,7 @@ also be placed in R Markdown and Quarto documents, used in Shiny with
 
 \itemize{
 \item The band at the top shows the title, notes, the size of the embedded data
-and the estimated size of \strong{Export CSV} for the current rows and columns.
+and the estimated size of a CSV export of the current rows and columns.
 \item \strong{Columns} opens a searchable list of every column with its type,
 distinct count, share missing, range and a small distribution chart
 (hover a bar for its counts). The chart darkens the part of each column
@@ -104,12 +105,16 @@ filter.
 \item \strong{Mark} adds a marker column and sets a value on every filtered row;
 clicking a marker cell sets one row. Marker columns can be filtered,
 sorted and queried, are saved in the reader's browser, and are included
-in \strong{Export CSV} together with a \code{row} column (the original row number)
-for joining back to the data in R.
+in exports together with a \code{row} column (the original row number) for
+joining back to the data in R.
 \item \strong{WHERE} takes a SQL condition over any column, for example
 \verb{comment REGEXP 'review|call' AND income IS NOT NULL}. Click \verb{?} for the
-syntax. \strong{Full query} shows the column filters, search and WHERE
-condition combined as one condition, to copy or edit.
+syntax. The toolbar's \strong{WHERE} switch shows or hides this bar, and
+\strong{See Query} shows the column filters, search and WHERE condition
+combined as one condition, to copy or edit.
+\item \strong{Export} saves the filtered rows and shown columns as CSV, Excel
+(.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
+or copies them to the clipboard as tab-separated text.
 \item The search box has regular-expression (\verb{.*}) and \code{NOT} toggles.
 \item Toolbar switches change the theme and turn on a monospace font.
 }
@@ -120,6 +125,6 @@ if (interactive()) {
   pqview(mtcars)
   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
          notes = "Fisher's iris data, 150 flowers")
-  pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono")
+  pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
 }
 }

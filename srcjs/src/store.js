@@ -93,7 +93,10 @@ export function buildColumn(name, values, info = {}) {
       col.integer = type === 'number' && (info.integer == null ? integer : !!info.integer)
       col.min = min <= max ? min : null
       col.max = min <= max ? max : null
-      if (type === 'datetime') col.zone = makeZone(info.tz)
+      if (type === 'datetime') {
+        col.zone = makeZone(info.tz)
+        col.tz = info.tz || null
+      }
       return col
     }
     // 64-bit integers beyond double precision: keep exact digits as text

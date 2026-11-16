@@ -26,8 +26,9 @@
 #' @param theme Starting theme: `"auto"` follows the reader's system setting;
 #'   `"light"` and `"dark"` force one. Readers can switch with the toolbar
 #'   button, and their choice is remembered in their browser.
-#' @param font Starting font for the table: `"sans"` or `"mono"`. Readers can
-#'   switch with the toolbar's Mono button.
+#' @param font Starting font for the table: `"mono"` (the default) or
+#'   `"sans"`. Readers can switch with the toolbar's Mono button, and their
+#'   choice is remembered in their browser.
 #' @param top_offset Minimum height in pixels of the band above the toolbar
 #'   (title, notes and data sizes) when the viewer fills a page of its own (a
 #'   saved file or a browser tab), so browser chrome such as Safari's
@@ -45,7 +46,7 @@
 #' @return An htmlwidget.
 #' @section In the viewer:
 #' * The band at the top shows the title, notes, the size of the embedded data
-#'   and the estimated size of **Export CSV** for the current rows and columns.
+#'   and the estimated size of a CSV export of the current rows and columns.
 #' * **Columns** opens a searchable list of every column with its type,
 #'   distinct count, share missing, range and a small distribution chart
 #'   (hover a bar for its counts). The chart darkens the part of each column
@@ -64,12 +65,16 @@
 #' * **Mark** adds a marker column and sets a value on every filtered row;
 #'   clicking a marker cell sets one row. Marker columns can be filtered,
 #'   sorted and queried, are saved in the reader's browser, and are included
-#'   in **Export CSV** together with a `row` column (the original row number)
-#'   for joining back to the data in R.
+#'   in exports together with a `row` column (the original row number) for
+#'   joining back to the data in R.
 #' * **WHERE** takes a SQL condition over any column, for example
 #'   `comment REGEXP 'review|call' AND income IS NOT NULL`. Click `?` for the
-#'   syntax. **Full query** shows the column filters, search and WHERE
-#'   condition combined as one condition, to copy or edit.
+#'   syntax. The toolbar's **WHERE** switch shows or hides this bar, and
+#'   **See Query** shows the column filters, search and WHERE condition
+#'   combined as one condition, to copy or edit.
+#' * **Export** saves the filtered rows and shown columns as CSV, Excel
+#'   (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
+#'   or copies them to the clipboard as tab-separated text.
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
 #' * Toolbar switches change the theme and turn on a monospace font.
 #'
@@ -78,7 +83,7 @@
 #'   pqview(mtcars)
 #'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
 #'          notes = "Fisher's iris data, 150 flowers")
-#'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono")
+#'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
 #' }
 #' @export
 pqview <- function(data,
@@ -88,7 +93,7 @@ pqview <- function(data,
                    digits = 7,
                    where = NULL,
                    theme = c("auto", "light", "dark"),
-                   font = c("sans", "mono"),
+                   font = c("mono", "sans"),
                    top_offset = 56,
                    rownames = NULL,
                    max_bytes = 50e6,

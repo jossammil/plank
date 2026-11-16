@@ -1,6 +1,6 @@
 {
   "name": "pqview-js",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "e2e": "node test-e2e/e2e.mjs"
   },
   "dependencies": {
-    "hyparquet": "^1.33.0"
+    "hyparquet": "^1.33.0",
+    "hyparquet-writer": "0.18.0"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

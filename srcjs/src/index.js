@@ -5,6 +5,7 @@ import { decodeBase64, openDataset } from './load.js'
 import { computeView, emptySpec, isActive, hasOptions, compileRegex } from './filters.js'
 import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } from './query.js'
 import { toCSV } from './csv.js'
+import { toXLSX, toRDS, toParquet, toTSV, XLSX_MAX_ROWS } from './export.js'
 import { Grid } from './grid.js'
 import { Picker } from './picker.js'
 import { chartSVG, overlayCounts, detailHTML } from './spark.js'
@@ -72,7 +73,7 @@ export function mount(el, x) {
 
   const prefs = {
     theme: THEMES.includes(loadPref('theme')) ? loadPref('theme') : (THEMES.includes(x.theme) ? x.theme : 'auto'),
-    mono: loadPref('mono') === null ? x.font === 'mono' : loadPref('mono') === '1',
+    mono: loadPref('mono') === null ? x.font !== 'sans' : loadPref('mono') === '1',
     query: loadPref('query') !== '0',
     full: loadPref('fullQuery') === '1',
     pickerWidth: +loadPref('pickerWidth') || 0,
@@ -142,10 +143,11 @@ export function mount(el, x) {
       title: 'Add a marker column and mark the filtered rows',
     })
     const exportBtn = h('button', {
-      class: 'pqv-btn', type: 'button', text: 'Export CSV',
-      title: 'Download the filtered rows and visible columns as CSV',
+      class: 'pqv-btn', type: 'button', text: 'Export', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+      title: 'Save or copy the filtered rows and visible columns: CSV, Excel, R (.rds), parquet or clipboard',
     })
-    const queryBtn = toggle('Query', 'Show or hide the WHERE query bar', prefs.query)
+    const queryBtn = toggle('WHERE', 'Show or hide the WHERE query bar', prefs.query)
+    const fullBtn = toggle('See Query', 'Show every filter, search and WHERE condition combined as one query', prefs.full)
     const monoBtn = toggle('Mono', 'Monospace font', prefs.mono)
     const themeBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button' })
 
@@ -169,7 +171,7 @@ export function mount(el, x) {
       pickerBtn,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
       status, clearBtn, markBtn, exportBtn,
-      h('div', { class: 'pqv-switches' }, queryBtn, monoBtn, themeBtn))
+      h('div', { class: 'pqv-switches' }, queryBtn, fullBtn, monoBtn, themeBtn))
 
     // ---- query bar ------------------------------------------------------
     const queryInput = h('input', {
@@ -183,7 +185,6 @@ export function mount(el, x) {
       'aria-expanded': 'false', title: 'Query syntax and examples',
     })
     const queryMsg = h('div', { class: 'pqv-query-msg', 'aria-live': 'polite' })
-    const fullBtn = toggle('Full query', 'Show every filter, search and query combined as one WHERE condition', prefs.full)
     const fullText = h('pre', { class: 'pqv-full-text' })
     const fullCopy = h('button', { class: 'pqv-btn pqv-btn-sm', type: 'button', title: 'Copy the full query' })
     fullCopy.innerHTML = COPY_ICON + '<span>Copy</span>'
@@ -193,16 +194,15 @@ export function mount(el, x) {
     })
     const fullBox = h('div', { class: 'pqv-full', hidden: !prefs.full },
       h('div', { class: 'pqv-full-head' },
-        h('span', { class: 'pqv-full-label', text: 'Full query' }),
+        h('span', { class: 'pqv-full-label', text: 'Query' }),
         h('span', { class: 'pqv-full-note', text: 'column filters, search and WHERE combined' }),
         fullCopy, fullUse),
       fullText)
     const queryBar = h('div', { class: 'pqv-querybar', hidden: !prefs.query },
       h('div', { class: 'pqv-query-row' },
         h('label', { class: 'pqv-query-label', text: 'WHERE' }),
-        queryInput, queryNotBtn, queryHelpBtn, fullBtn),
-      queryMsg,
-      fullBox)
+        queryInput, queryNotBtn, queryHelpBtn),
+      queryMsg)
     queryBar.querySelector('label').addEventListener('click', () => queryInput.focus())
 
     const pickerHost = h('div', { class: 'pqv-picker' })
@@ -293,7 +293,7 @@ export function mount(el, x) {
       sizeExport.append(
         h('span', { class: 'pqv-size-k', text: 'Export' }),
         h('span', { class: 'pqv-size-v', text: (exact ? '' : '≈ ') + formatBytes(Math.round(est)) }))
-      sizeExport.title = `${exact ? '' : 'Estimated '}size of Export CSV: ${view.length.toLocaleString()} rows × ` +
+      sizeExport.title = `${exact ? '' : 'Estimated '}size of a CSV export: ${view.length.toLocaleString()} rows × ` +
         `${cols.length + (rowNumbers ? 1 : 0)} columns${exact ? '' : ', measured on a sample of ' + k.toLocaleString() + ' rows'}.`
     }
 
@@ -676,7 +676,7 @@ export function mount(el, x) {
         else window.localStorage.setItem(marksKey, JSON.stringify(serializeMarkers(Array.from(markers.values()))))
         marksStore.error = null
       } catch (err) {
-        marksStore.error = 'Marks could not be saved in this browser (storage is full or blocked). Export CSV to keep them.'
+        marksStore.error = 'Marks could not be saved in this browser (storage is full or blocked). Export the data to keep them.'
       }
     }
     const saveMarksSoon = debounce(saveMarks, 400)
@@ -764,7 +764,7 @@ export function mount(el, x) {
     }
 
     let lastMarker = null
-    let lastValue = 'yes'
+    let lastValue = '1'
     const openMarkPanel = (message = '') => {
       const names = Array.from(markers.keys())
       const n = state.view.length
@@ -907,7 +907,7 @@ export function mount(el, x) {
         h('p', {
           class: 'pqv-opt-note',
           text: 'Marking replaces any value already on those rows. Click a cell in a marker column to set one row. ' +
-            'Marks are saved in this browser; Export CSV includes them, with a row column for joining back in R.',
+            'Marks are saved in this browser; Export includes them.',
         }))
       grid.openPop(markBtn, pop, value)
       if (marksStore.error && !message) msg.classList.add('pqv-bad-text')
@@ -996,21 +996,93 @@ export function mount(el, x) {
       grid.setColumns(state.cols)
       recompute()
     })
-    exportBtn.addEventListener('click', () => {
-      if (!state.cols.length) return
-      const rowNumbers = state.cols.some((c) => c.marker)
-      const blob = new Blob(toCSV(state.cols, state.view, { rowNumbers }), { type: 'text/csv;charset=utf-8' })
+    // ---- export ---------------------------------------------------------
+    const fileBase = String(x.title || 'data').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'data'
+    const download = (blob, ext) => {
       const url = URL.createObjectURL(blob)
-      const base = String(x.title || 'data').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'data'
-      const a = h('a', { href: url, download: `${base}.csv` })
+      const a = h('a', { href: url, download: `${fileBase}.${ext}` })
       el.append(a)
       a.click()
       a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      setTimeout(() => URL.revokeObjectURL(url), 30000)
+    }
+    const EXPORTS = [
+      { key: 'csv', label: 'CSV', ext: 'csv', note: 'Text, opens anywhere' },
+      { key: 'xlsx', label: 'Excel', ext: 'xlsx', note: 'Workbook with typed dates and numbers' },
+      { key: 'rds', label: 'R data', ext: 'rds', note: 'readRDS(): factors, dates and time zones kept' },
+      { key: 'parquet', label: 'Parquet', ext: 'parquet', note: 'Compact, typed; R, Python, DuckDB' },
+      { key: 'clip', label: 'Copy to clipboard', ext: '', note: 'Tab-separated, pastes into a spreadsheet' },
+    ]
+    const runExport = async (key) => {
+      const cols = state.cols
+      const view = state.view
+      const opts = { rowNumbers: cols.some((c) => c.marker), title: x.title }
+      switch (key) {
+        case 'csv':
+          download(new Blob(toCSV(cols, view, opts), { type: 'text/csv;charset=utf-8' }), 'csv')
+          return 'Downloaded CSV.'
+        case 'xlsx':
+          if (view.length > XLSX_MAX_ROWS) throw new Error(`Excel holds at most ${XLSX_MAX_ROWS.toLocaleString()} rows; filter first or use another format.`)
+          download(await toXLSX(cols, view, opts), 'xlsx')
+          return 'Downloaded Excel workbook.'
+        case 'rds':
+          download(await toRDS(cols, view, opts), 'rds')
+          return 'Downloaded .rds file.'
+        case 'parquet':
+          download(toParquet(cols, view, opts), 'parquet')
+          return 'Downloaded parquet file.'
+        default: {
+          const ok = await copyText(toTSV(cols, view, opts))
+          if (!ok) throw new Error('The browser did not allow copying; try another format.')
+          return `Copied ${view.length.toLocaleString()} rows to the clipboard.`
+        }
+      }
+    }
+    api.runExport = runExport
+    exportBtn.addEventListener('click', () => {
+      if (grid.pop && grid.pop.anchor === exportBtn) {
+        grid.closePop()
+        return
+      }
+      if (!state.cols.length) return
+      const rows = state.view.length
+      const ncol = state.cols.length + (state.cols.some((c) => c.marker) ? 1 : 0)
+      const msg = h('div', { class: 'pqv-export-msg', 'aria-live': 'polite' })
+      const list = h('div', { class: 'pqv-export-list', role: 'menu' })
+      for (const f of EXPORTS) {
+        const item = h('button', { class: 'pqv-export-item', type: 'button', role: 'menuitem' },
+          h('span', { class: 'pqv-export-label', text: f.label }),
+          f.ext ? h('span', { class: 'pqv-export-ext', text: '.' + f.ext }) : null,
+          h('span', { class: 'pqv-export-note', text: f.note }))
+        item.dataset.format = f.key
+        if (f.key === 'xlsx' && rows > XLSX_MAX_ROWS) item.disabled = true
+        item.addEventListener('click', async () => {
+          for (const b of list.querySelectorAll('button')) b.disabled = true
+          msg.className = 'pqv-export-msg'
+          msg.textContent = 'Preparing…'
+          // Let the message paint before the work starts.
+          await new Promise((resolve) => setTimeout(resolve, 20))
+          try {
+            const t = performance.now()
+            msg.textContent = await runExport(f.key)
+            timings.lastExport = performance.now() - t
+          } catch (err) {
+            msg.className = 'pqv-export-msg pqv-bad-text'
+            msg.textContent = String((err && err.message) || err)
+          }
+          for (const b of list.querySelectorAll('button')) b.disabled = b.dataset.format === 'xlsx' && rows > XLSX_MAX_ROWS
+        })
+        list.append(item)
+      }
+      const pop = h('div', { class: 'pqv-pop pqv-exportmenu', role: 'dialog', 'aria-label': 'Export' },
+        h('div', { class: 'pqv-pop-title', text: `Export ${rows.toLocaleString()} rows × ${ncol} columns` }),
+        list,
+        msg)
+      grid.openPop(exportBtn, pop, list.querySelector('button'))
     })
 
     loading.remove()
-    el.append(header, toolbar, queryBar, body)
+    el.append(header, toolbar, queryBar, fullBox, body)
     // On a narrow container the table matters more than the column list.
     if (el.clientWidth && el.clientWidth < 640) {
       pickerHost.hidden = true

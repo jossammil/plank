@@ -55,7 +55,7 @@ test_that("query, font, theme and offset options reach the browser", {
 
   d <- pqview(iris)
   expect_null(d$x$where)
-  expect_identical(d$x$font, "sans")
+  expect_identical(d$x$font, "mono")
   expect_equal(d$x$top_offset, 56)
   expect_null(pqview(iris, where = "  ")$x$where)
 

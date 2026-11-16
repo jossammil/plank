@@ -8,7 +8,9 @@
 // alongside the demo by applying the same filters to the data frame.
 
 import { chromium, webkit } from 'playwright'
-import { readFileSync, existsSync, mkdirSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, mkdtempSync, copyFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import os from 'node:os'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 
@@ -39,6 +41,7 @@ const launch = engine === 'webkit'
 const browser = await launch()
 console.log(`engine: ${engine} ${browser.version()}`)
 const context = await browser.newContext({ viewport: { width: 1440, height: 860 }, acceptDownloads: true, colorScheme: 'light' })
+if (engine === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
 const page = await context.newPage()
 const errors = []
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
@@ -52,6 +55,13 @@ const timings = await page.evaluate(() => document.querySelector('.pqv').pqview.
 console.log('timings (ms):', JSON.stringify(timings, (k, v) => (typeof v === 'number' ? +v.toFixed(1) : v)))
 
 const pqv = page.locator('.pqv')
+const toggleBtn = (text) => page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true })
+const exportAs = async (format) => {
+  await page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+  const [d] = await Promise.all([page.waitForEvent('download'), page.locator(`.pqv-export-item[data-format="${format}"]`).click()])
+  await page.keyboard.press('Escape')
+  return d
+}
 const settle = () => page.waitForTimeout(180)
 const count = async () => +(/^([\d,]+)/.exec(await page.locator('.pqv-status').innerText())[1].replace(/,/g, ''))
 const lastCompute = () => page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastCompute.toFixed(2))
@@ -91,6 +101,9 @@ check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-row').coun
 const toolbarTop = await page.locator('.pqv-toolbar').evaluate((e) => e.getBoundingClientRect().top)
 check('toolbar sits below the top offset (>= 56px)', toolbarTop >= 56, true)
 check('page marked standalone', await pqv.evaluate((e) => e.classList.contains('pqv-standalone')), true)
+check('monospace font by default', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), true)
+check('room above the title (>= 24px)', await page.locator('.pqv-header .pqv-title').evaluate((e) => e.getBoundingClientRect().top) >= 24, true)
+check('no Wider/Narrower button', await page.locator('.pqv-picker button', { hasText: /Wider|Narrower/ }).count(), 0)
 check('title in the top band', await page.locator('.pqv-header .pqv-title').innerText(), 'Synthetic demo')
 check('notes under the title', /100,000 synthetic records/.test(await page.locator('.pqv-header .pqv-notes').innerText()), true)
 check('data size shown', /^data\s*\d+(\.\d+)? MB$/i.test((await page.locator('.pqv-sizes .pqv-size').first().innerText()).replace(/\s+/g, ' ')), true)
@@ -254,16 +267,65 @@ await hcell('income').locator('.pqv-hname').click()
 await hcell('income').locator('.pqv-hname').click()
 await settle()
 
-// ---- CSV export ---------------------------------------------------------
+// ---- export: CSV, Excel, R, parquet and clipboard -------------------------
 await query("region = 'West'")
 const estText = await page.locator('.pqv-sizes .pqv-size').nth(1).locator('.pqv-size-v').innerText()
-const [download] = await Promise.all([page.waitForEvent('download'), page.locator('.pqv-btn', { hasText: 'Export CSV' }).click()])
+const download = await exportAs('csv')
+check('CSV file name', download.suggestedFilename(), 'Synthetic_demo.csv')
 const csvBytes = readFileSync(await download.path())
 const csv = csvBytes.toString('utf8').trimEnd().split('\r\n')
 check('CSV rows = filtered rows', csv.length - 1, expected.region_exact_west)
 const est = (() => { const m = /([\d.]+) (KB|MB)/.exec(estText); return +m[1] * (m[2] === 'MB' ? 1048576 : 1024) })()
 console.log(`   export estimate ${estText}, actual ${(csvBytes.length / 1048576).toFixed(2)} MB`)
 check('export size estimate within 5%', Math.abs(est - csvBytes.length) / csvBytes.length < 0.05, true)
+const outDir = mkdtempSync(path.join(os.tmpdir(), 'pqview-e2e-'))
+for (const f of ['xlsx', 'rds', 'parquet']) {
+  const d = await exportAs(f)
+  check(`${f} file name`, d.suggestedFilename(), `Synthetic_demo.${f}`)
+  copyFileSync(await d.path(), path.join(outDir, `west.${f}`))
+}
+console.log('   export ms (parquet):', await page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastExport.toFixed(1)))
+const shownCols = (await page.locator('.pqv-hcell[data-name]').evaluateAll((els) => els.map((e) => e.dataset.name))).join('|')
+let rcheck = null
+try {
+  rcheck = JSON.parse(execFileSync('Rscript', [path.join(root, 'srcjs/test-e2e/check-exports.R'), outDir], { encoding: 'utf8' }))
+} catch (err) {
+  console.log('SKIP  reading exports in R (' + String(err.message).split('\n')[0] + ')')
+}
+if (rcheck) {
+  for (const f of ['rds', 'parquet', 'xlsx']) {
+    const r = rcheck[f]
+    if (!r) {
+      console.log(`SKIP  ${f} not readable in this R installation`)
+      continue
+    }
+    check(`${f}: rows`, r.nrow, expected.region_exact_west)
+    check(`${f}: columns`, r.names.join('|'), shownCols)
+    check(`${f}: sum of income`, Math.abs(r.income_sum - expected.west_income_sum) < 1e-6 * expected.west_income_sum, true)
+    check(`${f}: missing ages`, r.age_na, expected.west_age_na)
+    check(`${f}: dates`, r.visit_first, expected.west_visit_first)
+  }
+  check('rds: types kept', rcheck.rds.classes, 'character|factor|character|integer|numeric|numeric|logical|Date|POSIXct|character')
+  check('rds: time zone kept', rcheck.rds.tz, 'America/Chicago')
+  check('rds: local times', rcheck.rds.updated_first, expected.west_updated_first)
+  check('parquet: types kept', rcheck.parquet.classes, 'character|character|character|integer|numeric|numeric|logical|Date|POSIXct|character')
+  check('xlsx: dates are dates', rcheck.xlsx.classes.split('|')[7], 'POSIXct')
+}
+// clipboard: tab-separated text
+await page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+await page.locator('.pqv-export-item[data-format="clip"]').click()
+await page.waitForFunction(() => /Copied|did not allow/.test(document.querySelector('.pqv-export-msg')?.textContent || ''))
+const clipMsg = await page.locator('.pqv-export-msg').innerText()
+check('clipboard copy reported', clipMsg, `Copied ${expected.region_exact_west.toLocaleString('en-US')} rows to the clipboard.`)
+if (engine === 'chromium') {
+  const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => null)
+  if (clip) {
+    const lines = clip.trimEnd().split('\r\n')
+    check('clipboard rows', lines.length - 1, expected.region_exact_west)
+    check('clipboard is tab-separated', lines[0], shownCols.replace(/\|/g, '\t'))
+  }
+}
+await page.keyboard.press('Escape')
 await clear()
 
 // ---- AND/OR column filters ----------------------------------------------
@@ -346,6 +408,8 @@ check('overlay cleared with filters', await page.locator('.pqv-pchart svg[data-o
 const markBtn = page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Mark' })
 await query("region = 'West'")
 await markBtn.click()
+check('mark value defaults to 1', await page.locator('.pqv-markpanel input[aria-label="Value to mark"]').inputValue(), '1')
+check('mark note', /Marks are saved in this browser; Export includes them\.$/.test(await page.locator('.pqv-markpanel .pqv-opt-note').innerText()), true)
 await page.locator('.pqv-markpanel input[aria-label="New column name"]').fill('review')
 await page.locator('.pqv-markpanel input[aria-label="Value to mark"]').fill('yes')
 await page.locator('.pqv-markpanel .pqv-btn', { hasText: 'filtered rows' }).first().click()
@@ -373,7 +437,7 @@ await settle()
 await query("review = 'maybe'")
 check('single cell marked', await count(), 1)
 await query('review IS NOT NULL')
-const [mdl] = await Promise.all([page.waitForEvent('download'), page.locator('.pqv-btn', { hasText: 'Export CSV' }).click()])
+const mdl = await exportAs('csv')
 const mcsv = readFileSync(await mdl.path(), 'utf8').trimEnd().split('\r\n')
 check('CSV with markers starts with a row column', mcsv[0].split(',')[0], 'row')
 check('CSV includes the marker column', mcsv[0].split(',').slice(-1)[0], 'review')
@@ -414,7 +478,7 @@ await settle()
 check('funnel switches it back on', await count(), expected.age_30_40)
 
 // ---- full query --------------------------------------------------------------
-await page.locator('.pqv-query-row .pqv-toggle', { hasText: 'Full query' }).click()
+await toggleBtn('See Query').click()
 await hcell('enrolled').locator('select').selectOption('T')
 await option('age', 'invert')
 await query("region IN ('West', 'South')")
@@ -429,7 +493,7 @@ check('edit as WHERE keeps the same rows', await count(), before)
 check('edit as WHERE clears the column filters', await page.locator('.pqv-fbtn:visible').count(), 0)
 await clear()
 check('full query empty after clear', await page.locator('.pqv-full-text').innerText(), 'No filters: every row is shown.')
-await page.locator('.pqv-query-row .pqv-toggle', { hasText: 'Full query' }).click()
+await toggleBtn('See Query').click()
 check('full query box hidden', await page.locator('.pqv-full').isVisible(), false)
 
 // ---- column list: checkbox only, details, tooltips, drag from the item, resize --
@@ -474,8 +538,8 @@ await page.mouse.move(rz.x + 154, rz.y + 200, { steps: 6 })
 await page.mouse.up()
 const w1 = await page.locator('.pqv-picker').evaluate((e) => e.offsetWidth)
 check('panel resized by dragging its edge', Math.abs(w1 - w0 - 150) <= 3, true)
-await page.locator('.pqv-pwide').click()
-check('Wider/Narrower button toggles width', await page.locator('.pqv-picker').evaluate((e) => e.offsetWidth), 270)
+await page.locator('.pqv-presizer').dblclick()
+check('double-clicking the edge toggles the width', await page.locator('.pqv-picker').evaluate((e) => e.offsetWidth), 270)
 
 // ---- theme and mono switches persist across reloads ------------------------
 const themeBtn = page.locator('.pqv-switches .pqv-icon')
@@ -484,27 +548,29 @@ await themeBtn.click() // light -> dark
 check('theme switched to dark', await pqv.getAttribute('data-theme'), 'dark')
 const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 check('page background follows the theme', bodyBg !== 'rgb(255, 255, 255)' && bodyBg !== 'rgba(0, 0, 0, 0)', true)
-await page.locator('.pqv-switches .pqv-toggle', { hasText: 'Mono' }).click()
+const monoFont = await page.locator('.pqv-cell').first().evaluate((e) => getComputedStyle(e).fontFamily)
+check('mono font in use', /mono|Menlo|Consolas/i.test(monoFont), true)
+await toggleBtn('Mono').click()
 await settle()
 const cellFont = await page.locator('.pqv-cell').first().evaluate((e) => getComputedStyle(e).fontFamily)
-check('mono font applied', /mono|Menlo|Consolas/i.test(cellFont), true)
+check('Mono switch turns it off', /mono|Menlo|Consolas/i.test(cellFont), false)
 if (shots) await page.screenshot({ path: `${shots}/${engine}-04-dark-mono.png` })
 await page.reload()
 await ready(page)
 const storage = await page.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
 if (storage) {
   check('theme remembered after reload', await pqv.getAttribute('data-theme'), 'dark')
-  check('mono remembered after reload', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), true)
+  check('mono choice remembered after reload', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), false)
 } else {
   console.log('SKIP  preference persistence (storage unavailable for file:// pages in this browser)')
 }
 await themeBtn.click() // dark -> auto
-await page.locator('.pqv-switches .pqv-toggle', { hasText: 'Mono' }).click()
+await toggleBtn('Mono').click()
 
-// query bar can be hidden
-await page.locator('.pqv-switches .pqv-toggle', { hasText: 'Query' }).click()
+// query bar can be hidden with the WHERE switch
+await toggleBtn('WHERE').click()
 check('query bar hidden', await page.locator('.pqv-querybar').isVisible(), false)
-await page.locator('.pqv-switches .pqv-toggle', { hasText: 'Query' }).click()
+await toggleBtn('WHERE').click()
 
 // ---- scrolling ----------------------------------------------------------
 const scroll = await page.evaluate(() => {
