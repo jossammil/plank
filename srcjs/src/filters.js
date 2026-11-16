@@ -14,13 +14,14 @@ import { displayText, lowerText, sortKey } from './store.js'
  *   bool:          true | false | null for boolean columns
  *   invert:        keep everything the value filter does NOT match, missing values included
  *   join:          'and' (row must match) | 'or' (row must match this or another OR filter)
+ *   paused:        filter kept but switched off from the header indicator
  * minText/maxText hold what the user typed so inputs can be restored.
  */
 export function emptySpec() {
   return {
     na: 'any', min: null, max: null, minText: '', maxText: '',
     contains: '', mode: 'contains', caseSensitive: false,
-    codes: null, bool: null, invert: false, join: 'and',
+    codes: null, bool: null, invert: false, join: 'and', paused: false,
   }
 }
 
@@ -66,8 +67,13 @@ export function hasValueFilter(col, spec) {
   }
 }
 
-export function isActive(col, spec) {
+/** Does the column have a filter set (whether or not it is paused)? */
+export function hasFilter(col, spec) {
   return spec.na !== 'any' || hasValueFilter(col, spec)
+}
+
+export function isActive(col, spec) {
+  return !spec.paused && hasFilter(col, spec)
 }
 
 /** Any option that differs from the default (used to flag the options button). */

@@ -46,16 +46,18 @@ export function distribution(col) {
       bins = []
       binOf.fill(MISSING)
     } else {
-      const whole = col.type === 'number' && col.integer && hi - lo < NUM_BINS
-      const k = whole ? hi - lo + 1 : lo === hi ? 1 : NUM_BINS
-      const width = whole ? 1 : (hi - lo) / k
+      // Whole numbers get whole-number bins, so labels read "18 to 21".
+      const ints = col.type === 'number' && col.integer
+      const span = hi - lo + 1
+      const width = ints ? Math.max(1, Math.ceil(span / NUM_BINS)) : lo === hi ? 1 : (hi - lo) / NUM_BINS
+      const k = ints ? Math.ceil(span / width) : lo === hi ? 1 : NUM_BINS
       bins = []
       for (let b = 0; b < k; b++) {
         const a = lo + b * width
-        bins.push({
-          label: whole || k === 1 ? fmt(a) : `${fmt(a)} to ${fmt(b === k - 1 ? hi : a + width)}`,
-          count: 0,
-        })
+        let label
+        if (ints) label = width === 1 ? fmt(a) : `${fmt(a)} to ${fmt(Math.min(hi, a + width - 1))}`
+        else label = k === 1 ? fmt(a) : `${fmt(a)} to ${fmt(b === k - 1 ? hi : a + width)}`
+        bins.push({ label, count: 0 })
       }
       for (let i = 0; i < n; i++) {
         const v = num[i]
@@ -165,7 +167,7 @@ export function chartSVG(col, on, n = col.n) {
       tip += ` · ${b.on.toLocaleString()} after filters`
       totalOn += b.on
     }
-    body += `<g><title>${esc(tip)}</title>` +
+    body += `<g data-tip="${esc(tip)}">` +
       `<rect class="pqv-spk-hit" x="${x}" y="0" width="${w}" height="${H}"/>` +
       `<rect class="${b.na ? 'pqv-spk-na' : 'pqv-spk-all'}" x="${x}" y="${(H - hAll).toFixed(2)}" width="${w}" height="${hAll.toFixed(2)}"/>`
     if (b.on !== null && b.on > 0) {
@@ -176,4 +178,87 @@ export function chartSVG(col, on, n = col.n) {
   })
   const attrs = on ? ` data-on="${totalOn}"` : ''
   return `<svg class="pqv-spk" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" preserveAspectRatio="none" role="img" aria-label="Distribution of ${esc(col.name)}"${attrs}>${body}</svg>`
+}
+
+/** min, quartiles, mean and max of a number/date column (finite values), cached. */
+export function numericSummary(col) {
+  if (col._summary !== undefined) return col._summary
+  const vals = []
+  const num = col.num
+  let sum = 0
+  for (let i = 0; i < col.n; i++) {
+    const v = num[i]
+    if (!col.isNull[i] && v > -Infinity && v < Infinity) {
+      vals.push(v)
+      sum += v
+    }
+  }
+  if (!vals.length) {
+    col._summary = null
+    return null
+  }
+  const a = Float64Array.from(vals).sort()
+  const q = (p) => {
+    const x = (a.length - 1) * p
+    const lo = Math.floor(x)
+    return a[lo] + (a[Math.min(lo + 1, a.length - 1)] - a[lo]) * (x - lo)
+  }
+  col._summary = { min: a[0], q1: q(0.25), median: q(0.5), mean: sum / a.length, q3: q(0.75), max: a[a.length - 1] }
+  return col._summary
+}
+
+/** The most common values of a text column, cached: [{ value, count }]. */
+export function topValues(col, k = 10) {
+  if (col._top) return col._top
+  const counts = new Map()
+  for (let i = 0; i < col.n; i++) {
+    const s = col.str[i]
+    if (s !== null) counts.set(s, (counts.get(s) || 0) + 1)
+  }
+  col._top = Array.from(counts, ([value, count]) => ({ value, count }))
+    .sort((x, y) => y.count - x.count)
+    .slice(0, k)
+  return col._top
+}
+
+/**
+ * Detail view for a column in the list: a larger chart, a summary for
+ * numbers and dates, and a table of the chart's bars (or the most common
+ * values for free text). `on` is from overlayCounts, or null.
+ */
+export function detailHTML(col, on, n = col.n) {
+  const d = distribution(col)
+  const pct = (c) => {
+    const p = (c / n) * 100
+    return p === 0 ? '0%' : p < 0.1 ? '<0.1%' : p >= 10 ? p.toFixed(0) + '%' : p.toFixed(1) + '%'
+  }
+  let html = chartSVG(col, on, n).replace('class="pqv-spk"', 'class="pqv-spk pqv-spk-big"')
+  if (d.kind === 'range') {
+    const s = numericSummary(col)
+    if (s) {
+      const fmt = valueFormatter(col)
+      const mean = col.type === 'number' ? formatNumber(s.mean, 4) : fmt(s.mean)
+      html += '<dl class="pqv-dsum">' +
+        [['min', fmt(s.min)], ['25%', fmt(s.q1)], ['median', fmt(s.median)], ['mean', mean], ['75%', fmt(s.q3)], ['max', fmt(s.max)]]
+          .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('') +
+        '</dl>'
+    }
+  }
+  const head = `<tr><th>${d.kind === 'range' ? 'Range' : 'Value'}</th><th>Rows</th><th>%</th>${on ? '<th title="Rows left by the current filters">Kept</th>' : ''}</tr>`
+  let rows
+  if (d.kind === 'presence' && col.str) {
+    html += '<div class="pqv-dnote">Mostly unique text. Most common values:</div>'
+    rows = topValues(col).map((t) => ({ label: t.value, count: t.count, on: null }))
+  } else {
+    rows = d.bins.map((b, j) => ({ label: b.label, count: b.count, on: on ? on[j] : null }))
+    // Empty ranges add nothing to the table (the chart still shows the gaps).
+    if (d.kind === 'range') rows = rows.filter((r) => r.count > 0)
+  }
+  if (d.missing) rows.push({ label: 'NA', count: d.missing, on: on ? on[d.bins.length] : null, na: true })
+  html += '<table class="pqv-dtable"><thead>' + head + '</thead><tbody>' +
+    rows.map((r) => `<tr${r.na ? ' class="pqv-dna"' : ''}><td title="${esc(r.label)}">${esc(r.label === '' ? '(empty)' : r.label)}</td>` +
+      `<td>${r.count.toLocaleString()}</td><td>${pct(r.count)}</td>` +
+      (on ? `<td>${r.on === null ? '' : r.on.toLocaleString()}</td>` : '') + '</tr>').join('') +
+    '</tbody></table>'
+  return html
 }

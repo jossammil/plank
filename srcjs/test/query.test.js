@@ -159,3 +159,15 @@ test('errors name the problem and position', () => {
   assert.match(err('foo(age) > 1').message, /Unknown function foo\(\)/)
   assert.match(err('age > 3 #').message, /Unexpected character '#'/)
 })
+
+test('IS [NOT] TRUE / FALSE never returns unknown', () => {
+  const age = buildColumn('age', [20, 40, null, 60])
+  const flag = buildColumn('flag', [true, null, false, true])
+  const get = (name) => ({ age, flag })[name]
+  const rows = (q) => Array.from(evaluateQuery(compileQuery(parseQuery(q).ast, get), 4, false))
+  assert.deepEqual(rows('(age > 30) IS TRUE'), [0, 1, 0, 1])
+  assert.deepEqual(rows('(age > 30) IS NOT TRUE'), [1, 0, 1, 0])
+  assert.deepEqual(rows('(age > 30) IS FALSE'), [1, 0, 0, 0])
+  assert.deepEqual(rows('flag IS NOT FALSE'), [1, 1, 0, 1])
+  assert.throws(() => rows('age IS TRUE'), /needs a condition/)
+})

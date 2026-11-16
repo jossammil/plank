@@ -63,3 +63,10 @@ test_that("query, font, theme and offset options reach the browser", {
   expect_error(pqview(iris, where = c("a", "b")))
   expect_error(pqview(iris, top_offset = -1))
 })
+
+test_that("notes are passed as one string, one line per element", {
+  expect_null(pqview(iris)$x$notes)
+  expect_identical(pqview(iris, notes = "Source: R")$x$notes, "Source: R")
+  expect_identical(pqview(iris, notes = c("a", NA, "b"))$x$notes, "a\nb")
+  expect_error(pqview(iris, notes = 1))
+})

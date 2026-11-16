@@ -4,7 +4,7 @@
 import { h } from './dom.js'
 import { cellText } from './store.js'
 import { parseNumberInput, parseDateInput } from './format.js'
-import { textError, hasOptions, compileRegex } from './filters.js'
+import { textError, hasOptions, compileRegex, hasFilter } from './filters.js'
 
 const ROW_H = 26
 const OVERSCAN = 6
@@ -21,6 +21,8 @@ const MODE_TITLE = {
   regex: 'Rows matching this regular expression',
   exact: 'Rows equal to this text',
 }
+const FUNNEL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">'
+  + '<path d="M2 3h12l-4.6 5.4V13l-2.8 1.2V8.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>'
 const OPT_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
   + '<path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h8M14 12h0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
   + '<circle cx="11" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/>'
@@ -65,6 +67,7 @@ export class Grid {
     this.cellKey = ''
     this.raf = 0
     this.pop = null
+    this.refreshers = new Map()
     this.rowNumW = Math.max(44, 20 + 8 * String(opts.n).length)
 
     this.head = h('div', { class: 'pqv-head', role: 'row' })
@@ -194,6 +197,7 @@ export class Grid {
 
   buildHead() {
     this.head.textContent = ''
+    this.refreshers.clear()
     this.head.append(
       h('div', { class: 'pqv-hcell pqv-hrownum', title: 'Row number in the original data' },
         h('div', { class: 'pqv-hname pqv-hname-static' }, '#'),
@@ -231,15 +235,35 @@ export class Grid {
       'aria-label': `${col.name} filter options`, title: 'Filter options: match mode, include or exclude, missing values',
     })
     opt.innerHTML = OPT_ICON
+    // Shown while the column has a filter: click to switch it off and on.
+    const fbtn = h('button', { class: 'pqv-fbtn', type: 'button', hidden: true })
+    fbtn.innerHTML = FUNNEL
+    fbtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      spec.paused = !spec.paused
+      refresh()
+      this.opts.onFilter(col.name, false)
+    })
     const refresh = () => {
       controls.refresh()
+      const has = hasFilter(col, spec)
+      const on = has && !spec.paused
+      fbtn.hidden = !has
+      fbtn.classList.toggle('pqv-on', on)
+      fbtn.setAttribute('aria-pressed', String(on))
+      fbtn.title = on ? 'Filter on: click to switch it off' : 'Filter off: click to switch it back on'
+      fbtn.setAttribute('aria-label', `${col.name} filter ${on ? 'on' : 'off'}`)
+      if (cell) {
+        cell.classList.toggle('pqv-hfiltered', on)
+        cell.classList.toggle('pqv-hpaused', has && !!spec.paused)
+      }
       const list = badgeList(col, spec)
       badges.textContent = ''
       for (const b of list) badges.append(h('span', { class: 'pqv-badge', text: b.text, title: b.title }))
       opt.classList.toggle('pqv-on', hasOptions(spec))
       // Widen the column if its name and badges no longer fit.
-      if (list.length && badges.isConnected) {
-        const need = Math.ceil(this.measure(col.name) * 1.08 + 40 + badges.offsetWidth)
+      if ((list.length || has) && badges.isConnected) {
+        const need = Math.ceil(this.measure(col.name) * 1.08 + 40 + badges.offsetWidth + (has ? 20 : 0))
         if (need > this.widths.get(col.name)) {
           this.widths.set(col.name, Math.min(need, MAX_AUTO_W + 120))
           this.layout()
@@ -249,14 +273,16 @@ export class Grid {
     }
     opt.addEventListener('click', () => {
       if (this.pop && this.pop.anchor === opt) this.closePop()
-      else this.openOptions(col, spec, opt, () => { refresh(); this.opts.onFilter(col.name, false) })
+      else this.openOptions(col, spec, opt, () => { spec.paused = false; refresh(); this.opts.onFilter(col.name, false) })
     })
-    refresh()
-    const cell = h('div', { class: col.marker ? 'pqv-hcell pqv-hmarker' : 'pqv-hcell', role: 'columnheader' },
-      nameBtn,
+    let cell = null
+    this.refreshers.set(col.name, refresh)
+    cell = h('div', { class: col.marker ? 'pqv-hcell pqv-hmarker' : 'pqv-hcell', role: 'columnheader' },
+      h('div', { class: 'pqv-hnamerow' }, fbtn, nameBtn),
       h('div', { class: 'pqv-hfilter' }, controls.nodes, opt),
       resizer)
     cell.dataset.name = col.name
+    refresh()
     return cell
   }
 
@@ -264,7 +290,13 @@ export class Grid {
   filterControls(col, spec) {
     const out = []
     let refresh = () => {}
-    const changed = (debounced) => this.opts.onFilter(col.name, debounced)
+    const changed = (debounced) => {
+      // Editing a filter switches it back on and updates the indicator.
+      spec.paused = false
+      const r = this.refreshers.get(col.name)
+      if (r) r()
+      this.opts.onFilter(col.name, debounced)
+    }
 
     if (col.type === 'number' || col.type === 'date' || col.type === 'datetime') {
       const isNum = col.type === 'number'

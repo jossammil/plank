@@ -33,8 +33,9 @@ pqview(mtcars)
 # From a parquet file, choosing which columns show first
 pqview("big_table.parquet", columns = c("id", "state", "amount"))
 
-# One portable file
-save_pqview(my_data, "my_data.html", title = "My data", open = TRUE)
+# One portable file, with a title and a line of notes in the top band
+save_pqview(my_data, "my_data.html", title = "My data",
+            notes = "Extract of 2024-06-30; one row per visit", open = TRUE)
 
 # Start with a query, a monospace font and a dark theme
 pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono", theme = "dark")
@@ -46,18 +47,28 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 
 ## What the page does
 
+- **Title band.** The title and any `notes` sit at the top, with the size
+  of the embedded data and the estimated size of a CSV export of the rows
+  and columns currently shown.
 - **Column picker.** Every column is listed with its type and, once read,
   its distinct count, share of missing values, range and a small
   distribution chart (a histogram for numbers and dates, the top values for
   text and factors). While filters are on, each chart darkens the rows they
   keep, so you can see what a filter on one column does to the others.
-  Columns in the table are listed first, in table order: a newly ticked
-  column joins the right edge, and you can drag the grip (or press
-  Alt+Up/Down) to reorder.
+  Hover a bar for its value and counts. Only the checkbox adds or removes a
+  column; click the rest of an item for its details (min, quartiles, mean
+  and max for numbers and dates, and counts for every value or range, kept
+  and total). Columns in the table are listed first, in table order: a
+  newly ticked column joins the right edge, and dragging any item places it
+  in the table (Alt+Up/Down also reorders). Drag the panel's right edge, or
+  click **Wider**, to give the list more room.
 - **Per-column filters** under each header: min/max for numbers, from/to for
   dates (`2024`, `2024-03` or `2024-03-15` all work), a checklist for factors
   and low-cardinality text, a text box for other text, and TRUE/FALSE for
   logicals.
+- **Filter switch.** A funnel appears next to the name of a filtered column.
+  Click it to switch that filter off (its settings stay) and again to switch
+  it back on.
 - **Filter options** (the sliders button in each header):
   - *Match*: contains, regular expression, or exact value, optionally case
     sensitive.
@@ -75,6 +86,9 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   toggle; "Only these" checks just the values that match.
 - **WHERE query bar.** A SQL condition over any column, shown or not, applied
   on top of the column filters. `NOT` inverts it; `?` lists examples.
+  **Full query** shows every column filter, the search and the WHERE
+  condition combined as one condition, which you can copy, or turn into
+  the WHERE text to edit (it selects exactly the same rows).
 - **Global search** across the visible columns, with `.*` (regular
   expression) and `NOT` toggles.
 - **Sorting.** Click a header to sort; shift-click to add more sort keys.
@@ -110,6 +124,7 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 | Text patterns | `comment LIKE '%review%'` (`%` any text, `_` one character, ignores case) |
 | Regular expressions | `comment REGEXP '^(called\|left)'` (case-sensitive), `IREGEXP` or `~*` to ignore case |
 | Missing values | `income IS NULL`, `comment IS NOT NULL` |
+| Truth tests | `(age > 30) IS NOT TRUE` (false or unknown), `enrolled IS FALSE` |
 | Dates | `visit_date BETWEEN '2023-01' AND '2023-06'`, `updated_at = '2024-03-10'` (a date covers the whole period, in the column's time zone) |
 | Functions | `LOWER`, `UPPER`, `LENGTH`, `ABS`, `YEAR`, `MONTH`, `DAY` |
 | Logical columns | `enrolled AND NOT flagged` |

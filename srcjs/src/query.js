@@ -209,7 +209,12 @@ export function parseQuery(text) {
             next()
             not = true
           }
-          if (!isKw('NULL')) throw new QueryError('Expected NULL after IS', peek().pos)
+          if (isKw('TRUE') || isKw('FALSE')) {
+            const want = peek().value === 'TRUE'
+            next()
+            return { t: 'istruth', a, want, neg: not, pos: t.pos }
+          }
+          if (!isKw('NULL')) throw new QueryError('Expected NULL, TRUE or FALSE after IS', peek().pos)
           next()
           return { t: 'isnull', a, neg: not, pos: t.pos }
         }
@@ -358,7 +363,7 @@ export function compileQuery(ast, getCol) {
   function value(node) {
     switch (node.t) {
       case 'paren':
-        if (['or', 'and', 'not', 'cmp', 'in', 'between', 'like', 'regex', 'isnull', 'truth'].includes(node.a.t)) {
+        if (['or', 'and', 'not', 'cmp', 'in', 'between', 'like', 'regex', 'isnull', 'istruth', 'truth'].includes(node.a.t)) {
           const p = pred(node.a)
           return { type: 'bool', f: (i) => { const r = p(i); return r === U ? null : r } }
         }
@@ -630,6 +635,18 @@ export function compileQuery(ast, getCol) {
           return node.neg ? (i) => (nul[i] ? F : T) : (i) => (nul[i] ? T : F)
         }
         return node.neg ? (i) => (a.f(i) === null ? F : T) : (i) => (a.f(i) === null ? T : F)
+      }
+      case 'istruth': {
+        // Never unknown: a missing result is neither TRUE nor FALSE.
+        const a = value(node.a)
+        if (a.type !== 'bool') throw new QueryError('IS TRUE / IS FALSE needs a condition or a logical column', node.pos)
+        const want = node.want ? 1 : 0
+        const hit = node.neg ? F : T
+        const miss = node.neg ? T : F
+        return (i) => {
+          const x = a.f(i)
+          return x !== null && +x === want ? hit : miss
+        }
       }
       case 'truth': {
         const a = value(node.a)

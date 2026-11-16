@@ -7,12 +7,21 @@ import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } fr
 import { toCSV } from './csv.js'
 import { Grid } from './grid.js'
 import { Picker } from './picker.js'
-import { chartSVG, overlayCounts } from './spark.js'
+import { chartSVG, overlayCounts, detailHTML } from './spark.js'
+import { fullQueryParts, formatFullQuery } from './sql.js'
 import {
   makeMarker, setMarks, usedValues, serializeMarkers, deserializeMarkers, fingerprint,
 } from './markers.js'
 
 const DEFAULT_VISIBLE = 10
+const COPY_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg>'
+
+function formatBytes(b) {
+  if (b < 1024) return `${b} B`
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(b < 10240 ? 1 : 0)} KB`
+  if (b < 1024 * 1024 * 1024) return `${(b / 1048576).toFixed(b < 10485760 ? 2 : 1)} MB`
+  return `${(b / 1073741824).toFixed(2)} GB`
+}
 // Above this many cells, columns are only decoded when selected.
 const BACKGROUND_CELLS = 6e6
 const THEMES = ['auto', 'light', 'dark']
@@ -65,6 +74,8 @@ export function mount(el, x) {
     theme: THEMES.includes(loadPref('theme')) ? loadPref('theme') : (THEMES.includes(x.theme) ? x.theme : 'auto'),
     mono: loadPref('mono') === null ? x.font === 'mono' : loadPref('mono') === '1',
     query: loadPref('query') !== '0',
+    full: loadPref('fullQuery') === '1',
+    pickerWidth: +loadPref('pickerWidth') || 0,
   }
   el.dataset.theme = prefs.theme
   el.classList.toggle('pqv-mono', prefs.mono)
@@ -76,13 +87,14 @@ export function mount(el, x) {
   const topOffset = Math.max(0, Number(x.top_offset) || 0)
   if (standalone) {
     el.classList.add('pqv-standalone')
+    // The band above the toolbar holds the title, notes and data sizes.
     el.style.setProperty('--pqv-top', topOffset + 'px')
   }
 
   const state = {
     selected: [], cols: [], specs: new Map(), sort: [], view: new Uint32Array(0),
     search: '', searchRegex: loadPref('searchRegex') === '1', searchInvert: false,
-    queryMask: null, queryInvert: false, queryError: null, queryCols: [], computed: false,
+    queryMask: null, queryInvert: false, queryError: null, queryCols: [], queryText: '', computed: false,
   }
   const timings = {}
   const api = { state, timings, ready: null, destroy() {} }
@@ -137,9 +149,24 @@ export function mount(el, x) {
     const monoBtn = toggle('Mono', 'Monospace font', prefs.mono)
     const themeBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button' })
 
+    // ---- title band: title, notes and data sizes -------------------------
+    const dataBytes = bytes.byteLength
+    const sizeData = h('div', { class: 'pqv-size' })
+    const sizeExport = h('div', { class: 'pqv-size' })
+    const pageBytes = Math.round((String(x.data || '').length + 150000) / 1024) * 1024
+    sizeData.append(h('span', { class: 'pqv-size-k', text: 'Data' }), h('span', { class: 'pqv-size-v', text: formatBytes(dataBytes) }))
+    sizeData.title = `Embedded parquet data: ${dataBytes.toLocaleString()} bytes ` +
+      `(${ds.n.toLocaleString()} rows × ${ds.fields.length} columns). This page is about ${formatBytes(pageBytes)}.`
+    const notes = x.notes == null ? '' : [].concat(x.notes).join('\n')
+    const header = h('div', { class: 'pqv-header' },
+      h('div', { class: 'pqv-heading' },
+        x.title ? h('div', { class: 'pqv-title', text: x.title, title: x.title }) : null,
+        notes ? h('div', { class: 'pqv-notes', text: notes }) : null),
+      h('div', { class: 'pqv-sizes' }, sizeData, sizeExport))
+    header.classList.toggle('pqv-header-empty', !x.title && !notes)
+
     const toolbar = h('div', { class: 'pqv-toolbar' },
       pickerBtn,
-      x.title ? h('div', { class: 'pqv-title', text: x.title, title: x.title }) : null,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
       status, clearBtn, markBtn, exportBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, monoBtn, themeBtn))
@@ -156,11 +183,26 @@ export function mount(el, x) {
       'aria-expanded': 'false', title: 'Query syntax and examples',
     })
     const queryMsg = h('div', { class: 'pqv-query-msg', 'aria-live': 'polite' })
+    const fullBtn = toggle('Full query', 'Show every filter, search and query combined as one WHERE condition', prefs.full)
+    const fullText = h('pre', { class: 'pqv-full-text' })
+    const fullCopy = h('button', { class: 'pqv-btn pqv-btn-sm', type: 'button', title: 'Copy the full query' })
+    fullCopy.innerHTML = COPY_ICON + '<span>Copy</span>'
+    const fullUse = h('button', {
+      class: 'pqv-btn pqv-btn-sm', type: 'button', text: 'Edit as WHERE',
+      title: 'Put the full query in the WHERE box and clear the column filters and search, so you can edit it',
+    })
+    const fullBox = h('div', { class: 'pqv-full', hidden: !prefs.full },
+      h('div', { class: 'pqv-full-head' },
+        h('span', { class: 'pqv-full-label', text: 'Full query' }),
+        h('span', { class: 'pqv-full-note', text: 'column filters, search and WHERE combined' }),
+        fullCopy, fullUse),
+      fullText)
     const queryBar = h('div', { class: 'pqv-querybar', hidden: !prefs.query },
       h('div', { class: 'pqv-query-row' },
         h('label', { class: 'pqv-query-label', text: 'WHERE' }),
-        queryInput, queryNotBtn, queryHelpBtn),
-      queryMsg)
+        queryInput, queryNotBtn, queryHelpBtn, fullBtn),
+      queryMsg,
+      fullBox)
     queryBar.querySelector('label').addEventListener('click', () => queryInput.focus())
 
     const pickerHost = h('div', { class: 'pqv-picker' })
@@ -200,8 +242,60 @@ export function mount(el, x) {
       grid.setView(state.view, resetScroll)
       updateStatus()
       refreshChartsSoon()
+      updateFullQuery()
+      updateExportSize()
     }
     const recomputeSoon = debounce(recompute, 90)
+
+    // ---- full query -------------------------------------------------------
+    const currentParts = () => fullQueryParts({
+      filters: state.cols.map((col) => ({ col, spec: getSpec(col.name) })),
+      searchCols: state.cols,
+      search: state.search,
+      searchRegex: state.searchRegex,
+      searchInvert: state.searchInvert,
+      query: state.queryMask !== null ? state.queryText : '',
+      queryInvert: state.queryInvert,
+    })
+    const updateFullQuery = () => {
+      if (fullBox.hidden) return
+      const text = formatFullQuery(currentParts())
+      fullText.textContent = text || 'No filters: every row is shown.'
+      fullText.classList.toggle('pqv-full-empty', !text)
+      fullCopy.disabled = !text
+      fullUse.disabled = !text
+    }
+    api.fullQuery = () => formatFullQuery(currentParts())
+
+    // ---- estimated export size ---------------------------------------------
+    // Measured on a sample of the shown rows, so it stays instant.
+    const encoder = new TextEncoder()
+    const updateExportSize = () => {
+      const view = state.view
+      const cols = state.cols
+      sizeExport.textContent = ''
+      if (!cols.length) {
+        sizeExport.append(h('span', { class: 'pqv-size-k', text: 'Export' }), h('span', { class: 'pqv-size-v', text: '—' }))
+        sizeExport.title = 'Select columns to export'
+        return
+      }
+      const rowNumbers = cols.some((c) => c.marker)
+      const k = Math.min(view.length, 1500)
+      const step = view.length / Math.max(1, k)
+      const sample = new Uint32Array(k)
+      for (let j = 0; j < k; j++) sample[j] = view[Math.floor(j * step)]
+      const parts = toCSV(cols, sample, { rowNumbers })
+      const headBytes = encoder.encode(parts[0]).length
+      let body = 0
+      for (let j = 1; j < parts.length; j++) body += encoder.encode(parts[j]).length
+      const est = headBytes + (k ? (body / k) * view.length : 0)
+      const exact = k === view.length
+      sizeExport.append(
+        h('span', { class: 'pqv-size-k', text: 'Export' }),
+        h('span', { class: 'pqv-size-v', text: (exact ? '' : '≈ ') + formatBytes(Math.round(est)) }))
+      sizeExport.title = `${exact ? '' : 'Estimated '}size of Export CSV: ${view.length.toLocaleString()} rows × ` +
+        `${cols.length + (rowNumbers ? 1 : 0)} columns${exact ? '' : ', measured on a sample of ' + k.toLocaleString() + ' rows'}.`
+    }
 
     const searchError = () => (state.searchRegex && state.search.trim()
       ? compileRegex(state.search.trim(), false).error || null : null)
@@ -333,6 +427,7 @@ export function mount(el, x) {
         return
       }
       chartsDirty = false
+      for (const name of picker.openDetails()) fillDetail(name)
       const names = picker.listedNames().filter((name) => picker.hasChart(name) && peekCol(name))
       let k = 0
       const step = () => {
@@ -350,6 +445,22 @@ export function mount(el, x) {
       step()
     }
     const refreshChartsSoon = debounce(refreshCharts, 120)
+    // The detail panel of a column in the list: decode it first if needed.
+    const fillDetail = async (name, box) => {
+      const target = box || picker.items.get(name)?.detail
+      if (!target) return
+      if (!peekCol(name)) {
+        target.textContent = 'Reading column…'
+        await decode(name)
+      }
+      const col = peekCol(name)
+      if (!col || col.error) {
+        target.textContent = col ? `Could not decode this column: ${col.error}` : ''
+        return
+      }
+      const view = filteredView()
+      target.innerHTML = detailHTML(col, view ? overlayCounts(col, view) : null, ds.n)
+    }
     api.refreshCharts = refreshCharts
 
     const decode = async (name) => {
@@ -381,7 +492,14 @@ export function mount(el, x) {
     const picker = new Picker(pickerHost, {
       fields: ds.fields,
       n: ds.n,
+      root: el,
+      width: prefs.pickerWidth,
+      onWidth: (w) => {
+        savePref('pickerWidth', String(w))
+        grid.schedule()
+      },
       onChange: (names) => setSelected(names),
+      onDetail: (name, box) => fillDetail(name, box),
     })
     api.picker = picker
     picker.search.addEventListener('input', () => refreshChartsSoon())
@@ -426,6 +544,7 @@ export function mount(el, x) {
         const test = compileQuery(ast, (name) => decoded.get(resolved.get(name)))
         const t = performance.now()
         state.queryMask = evaluateQuery(test, ds.n, state.queryInvert)
+        state.queryText = text.trim()
         state.queryCols = Array.from(decoded.keys())
         timings.lastQuery = performance.now() - t
         state.queryError = null
@@ -485,6 +604,59 @@ export function mount(el, x) {
         }),
         list)
       grid.openPop(queryHelpBtn, pop)
+    })
+    fullBtn.addEventListener('click', () => {
+      prefs.full = fullBox.hidden
+      fullBox.hidden = !prefs.full
+      setPressed(fullBtn, prefs.full)
+      savePref('fullQuery', prefs.full ? '1' : '0')
+      updateFullQuery()
+      grid.schedule()
+    })
+    const copyText = async (text) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        return true
+      } catch {
+        // Clipboard API unavailable (some browsers block it for file:// pages).
+        const area = h('textarea', { class: 'pqv-offscreen', 'aria-hidden': 'true' })
+        area.value = text
+        el.append(area)
+        area.select()
+        let ok = false
+        try { ok = document.execCommand('copy') } catch { ok = false }
+        area.remove()
+        return ok
+      }
+    }
+    fullCopy.addEventListener('click', async () => {
+      const ok = await copyText(api.fullQuery())
+      const label = fullCopy.querySelector('span')
+      label.textContent = ok ? 'Copied' : 'Select and copy'
+      if (!ok) {
+        const range = document.createRange()
+        range.selectNodeContents(fullText)
+        const sel = window.getSelection()
+        sel.removeAllRanges()
+        sel.addRange(range)
+      }
+      setTimeout(() => { label.textContent = 'Copy' }, 1500)
+    })
+    fullUse.addEventListener('click', () => {
+      const parts = currentParts()
+      if (!parts.length) return
+      state.specs.clear()
+      state.search = ''
+      searchInput.value = ''
+      state.searchInvert = false
+      setPressed(searchNotBtn, false)
+      state.queryInvert = false
+      setPressed(queryNotBtn, false)
+      queryInput.value = parts.join(' AND ')
+      grid.setColumns(state.cols)
+      runQuerySoon.cancel()
+      runQuery()
+      queryInput.focus()
     })
     queryBtn.addEventListener('click', () => {
       prefs.query = queryBar.hidden
@@ -838,7 +1010,7 @@ export function mount(el, x) {
     })
 
     loading.remove()
-    el.append(toolbar, queryBar, body)
+    el.append(header, toolbar, queryBar, body)
     // On a narrow container the table matters more than the column list.
     if (el.clientWidth && el.clientWidth < 640) {
       pickerHost.hidden = true

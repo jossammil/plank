@@ -1,7 +1,9 @@
-// Column picker: a searchable checklist of every column in the file, with a
-// type tag, summary stats and a small distribution chart that fill in as
-// columns are decoded. Selected columns are listed first, in table order,
-// and can be dragged (or moved with Alt+Up/Down) to reorder the table.
+// Column picker: a searchable list of every column in the file, with a type
+// tag, summary stats and a small distribution chart that fill in as columns
+// are decoded. Only the checkbox adds or removes a column. Clicking the rest
+// of an item opens its details; dragging an item reorders the table (or adds
+// the column at that place). Selected columns are listed first, in table
+// order. The panel can be resized from its right edge.
 
 import { h } from './dom.js'
 import { typeTag, columnStats } from './store.js'
@@ -18,9 +20,14 @@ export class Picker {
    * @param {{name: string, tag: string, label: string|null}[]} opts.fields
    * @param {number} opts.n total rows
    * @param {(names: string[]) => void} opts.onChange called with selected names in table order
+   * @param {(name: string, el: HTMLElement) => void} [opts.onDetail] fill an item's detail panel
+   * @param {HTMLElement} [opts.root] element that hosts the chart tooltip
+   * @param {number} [opts.width] starting panel width in pixels
+   * @param {(width: number) => void} [opts.onWidth] called after the user resizes the panel
    */
   constructor(host, opts) {
     this.opts = opts
+    this.host = host
     this.items = new Map()
     this.fileOrder = []
     this.order = []
@@ -43,8 +50,14 @@ export class Picker {
       this.emit()
     })
     this.list.addEventListener('keydown', (e) => {
+      const name0 = e.target && e.target.dataset && e.target.dataset.name
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('pqv-pmain')) {
+        e.preventDefault()
+        this.toggleDetail(name0)
+        return
+      }
       if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
-      const name = e.target && e.target.dataset && e.target.dataset.name
+      const name = name0
       const k = this.order.indexOf(name)
       if (k < 0) return
       e.preventDefault()
@@ -57,6 +70,7 @@ export class Picker {
       this.emit()
     })
     this.setupDrag()
+    this.setupTips()
 
     for (const f of opts.fields) this.addItem(f)
 
@@ -68,7 +82,50 @@ export class Picker {
           h('button', { class: 'pqv-link', type: 'button', text: 'All', onclick: () => this.setAll(true) }),
           h('button', { class: 'pqv-link', type: 'button', text: 'None', onclick: () => this.setAll(false) }))),
       this.list)
+
+    // Resize from the right edge; double-click (or the button) toggles wide.
+    this.widthBtn = h('button', {
+      class: 'pqv-link pqv-pwide', type: 'button', text: 'Wider', title: 'Make the column list wider',
+      onclick: () => this.setWidth(this.width > 380 ? 270 : 480, true),
+    })
+    host.querySelector('.pqv-pactions').append(this.widthBtn)
+    this.resizer = h('div', {
+      class: 'pqv-presizer', role: 'separator', 'aria-orientation': 'vertical',
+      title: 'Drag to resize the column list, double-click to widen or narrow it',
+      onpointerdown: (e) => this.startResize(e),
+      ondblclick: () => this.setWidth(this.width > 380 ? 270 : 480, true),
+    })
+    host.append(this.resizer)
+    this.setWidth(opts.width || 270, false)
     this.place()
+  }
+
+  setWidth(w, save) {
+    const root = this.opts.root
+    const max = Math.max(260, Math.min(900, (root && root.clientWidth ? root.clientWidth : 1200) * 0.7))
+    this.width = Math.round(Math.max(200, Math.min(max, w)))
+    this.host.style.width = this.width + 'px'
+    this.widthBtn.textContent = this.width > 380 ? 'Narrower' : 'Wider'
+    this.widthBtn.title = this.width > 380 ? 'Make the column list narrower' : 'Make the column list wider'
+    if (save && this.opts.onWidth) this.opts.onWidth(this.width)
+  }
+
+  startResize(e) {
+    e.preventDefault()
+    const x0 = e.clientX
+    const w0 = this.width
+    this.resizer.classList.add('pqv-active')
+    const move = (ev) => this.setWidth(w0 + ev.clientX - x0, false)
+    const up = () => {
+      this.resizer.classList.remove('pqv-active')
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+      if (this.opts.onWidth) this.opts.onWidth(this.width)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
   }
 
   addItem(f) {
@@ -78,21 +135,23 @@ export class Picker {
     const nameEl = h('span', { class: 'pqv-pname', text: f.name })
     const stats = h('div', { class: 'pqv-pstats', text: f.label || '' })
     const chart = h('div', { class: 'pqv-pchart' })
-    // A click on the grip must not toggle the checkbox of its label.
-    const grip = h('span', {
-      class: 'pqv-grip', draggable: 'false', title: 'Drag to reorder (or Alt+Up/Down)',
-      onclick: (e) => e.preventDefault(),
-    })
+    const detail = h('div', { class: 'pqv-pdetail', hidden: true })
+    const grip = h('span', { class: 'pqv-grip', 'aria-hidden': 'true' })
     grip.innerHTML = GRIP
-    const row = h('label', { class: 'pqv-pitem', title: f.label ? `${f.name}: ${f.label}` : f.name },
+    const main = h('div', {
+      class: 'pqv-pmain', tabindex: '0', role: 'button', 'aria-expanded': 'false',
+      title: (f.label ? `${f.name}: ${f.label}\n` : '') + 'Click for details, drag to place in the table',
+    },
+    h('div', { class: 'pqv-pline' }, nameEl, tag),
+    stats,
+    chart)
+    main.dataset.name = f.name
+    const row = h('div', { class: 'pqv-pitem' },
       grip,
-      cb,
-      h('div', { class: 'pqv-pmain' },
-        h('div', { class: 'pqv-pline' }, nameEl, tag),
-        stats,
-        chart))
+      h('label', { class: 'pqv-pcheck', title: 'Show this column in the table' }, cb),
+      h('div', { class: 'pqv-pbody' }, main, detail))
     row.dataset.name = f.name
-    const it = { cb, tag, nameEl, stats, chart, row, grip, label: f.label || '', done: false }
+    const it = { cb, tag, nameEl, stats, chart, detail, main, row, grip, label: f.label || '', done: false, open: false }
     it.lower = (f.name + ' ' + it.label).toLowerCase()
     this.items.set(f.name, it)
     this.fileOrder.push(f.name)
@@ -125,8 +184,9 @@ export class Picker {
     this.items.set(to, it)
     it.cb.dataset.name = to
     it.row.dataset.name = to
+    it.main.dataset.name = to
     it.nameEl.textContent = to
-    it.row.title = to
+    it.main.title = 'Click for details, drag to place in the table'
     it.lower = (to + ' ' + it.label).toLowerCase()
     this.fileOrder = this.fileOrder.map((x) => (x === from ? to : x))
     this.order = this.order.map((x) => (x === from ? to : x))
@@ -230,6 +290,24 @@ export class Picker {
     for (const it of this.items.values()) it.row.hidden = !!q && !it.lower.includes(q)
   }
 
+  /** Open or close an item's detail panel. */
+  toggleDetail(name, open) {
+    const it = this.items.get(name)
+    if (!it) return
+    it.open = open === undefined ? !it.open : open
+    it.detail.hidden = !it.open
+    it.row.classList.toggle('pqv-open', it.open)
+    it.main.setAttribute('aria-expanded', String(it.open))
+    if (it.open && this.opts.onDetail) this.opts.onDetail(name, it.detail)
+  }
+
+  /** Names of items whose details are open and listed. */
+  openDetails() {
+    const out = []
+    for (const [name, it] of this.items) if (it.open && !it.row.hidden) out.push(name)
+    return out
+  }
+
   /** Names of items currently listed (not hidden by the search). */
   listedNames() {
     const out = []
@@ -237,8 +315,8 @@ export class Picker {
     return out
   }
 
-  // Reordering uses pointer events rather than native drag-and-drop, so it
-  // behaves the same in every browser and on touch screens.
+  // Dragging uses pointer events rather than native drag-and-drop, so it
+  // behaves the same in every browser. A press that does not move is a click.
   setupDrag() {
     let drag = null
     const clear = () => {
@@ -247,17 +325,25 @@ export class Picker {
     }
     const target = (y) => {
       const rows = Array.from(this.selList.children).filter((r) => !r.hidden)
+      const box = this.selList.getBoundingClientRect()
+      // An unselected column can only be dropped into the "In table" group.
+      if (!rows.length || y > box.bottom + 12) return null
       for (const r of rows) {
         const rect = r.getBoundingClientRect()
         if (y < rect.top + rect.height / 2) return { row: r, after: false }
       }
-      const last = rows[rows.length - 1]
-      return last ? { row: last, after: true } : null
+      return { row: rows[rows.length - 1], after: true }
     }
     const move = (e) => {
       if (!drag) return
+      if (!drag.active) {
+        if (Math.abs(e.clientY - drag.y0) + Math.abs(e.clientX - drag.x0) < 6) return
+        drag.active = true
+        drag.row.classList.add('pqv-dragging')
+        this.list.classList.add('pqv-is-dragging')
+        this.hideTip()
+      }
       e.preventDefault()
-      // Scroll the list when the pointer nears its top or bottom edge.
       const lr = this.list.getBoundingClientRect()
       if (e.clientY < lr.top + 24) this.list.scrollTop -= 12
       else if (e.clientY > lr.bottom - 24) this.list.scrollTop += 12
@@ -271,13 +357,20 @@ export class Picker {
     }
     const end = (e, commit) => {
       if (!drag) return
-      const { name, row, t } = drag
+      const { name, row, t, active, el } = drag
       clear()
       row.classList.remove('pqv-dragging')
-      try { row.querySelector('.pqv-grip').releasePointerCapture(e.pointerId) } catch { /* already released */ }
+      this.list.classList.remove('pqv-is-dragging')
+      try { el.releasePointerCapture(e.pointerId) } catch { /* already released */ }
       drag = null
-      if (!commit || !t || t.row === row) return
-      this.order.splice(this.order.indexOf(name), 1)
+      if (!commit) return
+      if (!active) {
+        this.toggleDetail(name)
+        return
+      }
+      if (!t || t.row === row) return
+      const k0 = this.order.indexOf(name)
+      if (k0 >= 0) this.order.splice(k0, 1)
       let k = this.order.indexOf(t.row.dataset.name)
       if (t.after) k++
       this.order.splice(k, 0, name)
@@ -285,26 +378,67 @@ export class Picker {
       this.emit()
     }
     this.list.addEventListener('pointerdown', (e) => {
-      const grip = e.button === 0 && e.target.closest && e.target.closest('.pqv-grip')
-      const row = grip && grip.closest('.pqv-pitem')
-      if (!row || row.parentElement !== this.selList) return
+      if (e.button !== 0 || !e.target.closest) return
+      // The checkbox and the detail panel keep their normal behaviour.
+      if (e.target.closest('.pqv-pcheck, .pqv-pdetail, input, button, a')) return
+      const el = e.target.closest('.pqv-grip, .pqv-pmain')
+      const row = el && el.closest('.pqv-pitem')
+      if (!row) return
       e.preventDefault()
-      drag = { name: row.dataset.name, row, t: null, mark: null }
-      row.classList.add('pqv-dragging')
-      try { grip.setPointerCapture(e.pointerId) } catch { /* optional */ }
+      drag = { name: row.dataset.name, row, el, t: null, mark: null, active: false, x0: e.clientX, y0: e.clientY }
+      try { el.setPointerCapture(e.pointerId) } catch { /* optional */ }
     })
     // WebKit still sends mousedown after a cancelled pointerdown; its default
     // action would start a native drag and swallow the pointer events.
     this.list.addEventListener('mousedown', (e) => {
-      if (e.target.closest && e.target.closest('.pqv-grip')) e.preventDefault()
+      if (e.target.closest && e.target.closest('.pqv-grip, .pqv-pmain') && !e.target.closest('.pqv-pdetail')) e.preventDefault()
     })
-    // Stop the browser from starting its own drag (of the label or icon).
     this.list.addEventListener('dragstart', (e) => {
-      if (drag || (e.target.closest && e.target.closest('.pqv-grip'))) e.preventDefault()
+      if (drag || (e.target.closest && e.target.closest('.pqv-grip, .pqv-pmain'))) e.preventDefault()
     })
     this.list.addEventListener('pointermove', move)
     this.list.addEventListener('pointerup', (e) => end(e, true))
     this.list.addEventListener('pointercancel', (e) => end(e, false))
+  }
+
+  // Instant tooltips for the chart bars (native SVG titles are slow and
+  // unreliable inside a scrolling list).
+  setupTips() {
+    const root = this.opts.root
+    if (!root) return
+    this.tip = h('div', { class: 'pqv-tip', role: 'tooltip', hidden: true })
+    root.append(this.tip)
+    this.list.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' || this.list.classList.contains('pqv-is-dragging')) return
+      const g = e.target.closest && e.target.closest('[data-tip]')
+      if (!g) {
+        this.hideTip()
+        return
+      }
+      const text = g.getAttribute('data-tip')
+      if (this.tip.textContent !== text) this.tip.textContent = text
+      this.tip.hidden = false
+      const rr = root.getBoundingClientRect()
+      const tw = this.tip.offsetWidth
+      const th = this.tip.offsetHeight
+      let x = e.clientX - rr.left + 12
+      let y = e.clientY - rr.top - th - 10
+      if (x + tw > rr.width - 4) x = Math.max(4, e.clientX - rr.left - tw - 12)
+      if (y < 4) y = e.clientY - rr.top + 16
+      this.tip.style.left = x + 'px'
+      this.tip.style.top = y + 'px'
+      if (this.tipBar && this.tipBar !== g) this.tipBar.classList.remove('pqv-hot')
+      this.tipBar = g
+      g.classList.add('pqv-hot')
+    })
+    this.list.addEventListener('pointerleave', () => this.hideTip())
+    this.list.addEventListener('scroll', () => this.hideTip(), { passive: true })
+  }
+
+  hideTip() {
+    if (this.tip) this.tip.hidden = true
+    if (this.tipBar) this.tipBar.classList.remove('pqv-hot')
+    this.tipBar = null
   }
 
   /** Fill in the type tag and summary stats once a column has been decoded. */

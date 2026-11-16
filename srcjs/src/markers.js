@@ -3,7 +3,7 @@
 // store shape as a decoded category column, so filters, sorting, the WHERE
 // query and CSV export treat them like any other column.
 
-const CACHES = ['_text', '_lower', '_key', '_stats', '_dist', '_bin']
+const CACHES = ['_text', '_lower', '_key', '_stats', '_dist', '_bin', '_summary', '_top']
 
 export function makeMarker(name, n) {
   return {

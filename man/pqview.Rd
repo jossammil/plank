@@ -8,6 +8,7 @@ pqview(
   data,
   columns = NULL,
   title = NULL,
+  notes = NULL,
   digits = 7,
   where = NULL,
   theme = c("auto", "light", "dark"),
@@ -27,8 +28,12 @@ the path to a \code{.parquet} file.}
 \item{columns}{Names of the columns shown at first. \code{NULL} shows the first
 ten; \code{character(0)} starts with none selected.}
 
-\item{title}{Optional title shown in the toolbar. It is also used as the
-file name for CSV exports.}
+\item{title}{Optional title shown in the band above the toolbar. It is
+also used as the file name for CSV exports.}
+
+\item{notes}{Optional small text shown under the title, for notes such as
+the data source or date. A character vector is shown one element per
+line.}
 
 \item{digits}{Significant digits used to display non-integer numbers.
 Exports always keep full precision.}
@@ -44,10 +49,11 @@ button, and their choice is remembered in their browser.}
 \item{font}{Starting font for the table: \code{"sans"} or \code{"mono"}. Readers can
 switch with the toolbar's Mono button.}
 
-\item{top_offset}{Space in pixels above the toolbar when the viewer fills a
-page of its own (a saved file or a browser tab), so browser chrome such as
-Safari's full-screen toolbar does not cover it. Not used in the RStudio
-viewer, documents or Shiny. Use \code{0} for none.}
+\item{top_offset}{Minimum height in pixels of the band above the toolbar
+(title, notes and data sizes) when the viewer fills a page of its own (a
+saved file or a browser tab), so browser chrome such as Safari's
+full-screen toolbar does not cover the toolbar. Elsewhere the band is
+only as tall as its contents. Use \code{0} for no minimum.}
 
 \item{rownames}{Include row names as a first column? \code{NULL} includes them
 only when the rows are named (as in \code{mtcars}).}
@@ -78,11 +84,17 @@ also be placed in R Markdown and Quarto documents, used in Shiny with
 \section{In the viewer}{
 
 \itemize{
+\item The band at the top shows the title, notes, the size of the embedded data
+and the estimated size of \strong{Export CSV} for the current rows and columns.
 \item \strong{Columns} opens a searchable list of every column with its type,
-distinct count, share missing, range and a small distribution chart. The
-chart darkens the part of each column that the current filters keep.
-Columns in the table are listed first, in table order; drag them (or use
-Alt+Up/Down) to reorder the table.
+distinct count, share missing, range and a small distribution chart
+(hover a bar for its counts). The chart darkens the part of each column
+that the current filters keep. The checkbox adds or removes a column;
+clicking the rest of an item shows its details (summary statistics and
+counts per value or range); dragging an item places it in the table
+(Alt+Up/Down also reorders). Drag the panel's right edge to resize it.
+\item A funnel appears next to a filtered column's name; click it to switch
+that filter off and on without losing it.
 \item Each header has a filter (range, checklist, text or TRUE/FALSE) and an
 options button for the match mode (contains, regular expression, exact),
 case sensitivity, "everything but" (invert, missing values included),
@@ -96,7 +108,8 @@ in \strong{Export CSV} together with a \code{row} column (the original row numbe
 for joining back to the data in R.
 \item \strong{WHERE} takes a SQL condition over any column, for example
 \verb{comment REGEXP 'review|call' AND income IS NOT NULL}. Click \verb{?} for the
-syntax.
+syntax. \strong{Full query} shows the column filters, search and WHERE
+condition combined as one condition, to copy or edit.
 \item The search box has regular-expression (\verb{.*}) and \code{NOT} toggles.
 \item Toolbar switches change the theme and turn on a monospace font.
 }
@@ -105,7 +118,8 @@ syntax.
 \examples{
 if (interactive()) {
   pqview(mtcars)
-  pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris")
+  pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
+         notes = "Fisher's iris data, 150 flowers")
   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono")
 }
 }

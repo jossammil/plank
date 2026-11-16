@@ -13,8 +13,11 @@
 #'   the path to a `.parquet` file.
 #' @param columns Names of the columns shown at first. `NULL` shows the first
 #'   ten; `character(0)` starts with none selected.
-#' @param title Optional title shown in the toolbar. It is also used as the
-#'   file name for CSV exports.
+#' @param title Optional title shown in the band above the toolbar. It is
+#'   also used as the file name for CSV exports.
+#' @param notes Optional small text shown under the title, for notes such as
+#'   the data source or date. A character vector is shown one element per
+#'   line.
 #' @param digits Significant digits used to display non-integer numbers.
 #'   Exports always keep full precision.
 #' @param where Optional initial WHERE condition for the query bar, such as
@@ -25,10 +28,11 @@
 #'   button, and their choice is remembered in their browser.
 #' @param font Starting font for the table: `"sans"` or `"mono"`. Readers can
 #'   switch with the toolbar's Mono button.
-#' @param top_offset Space in pixels above the toolbar when the viewer fills a
-#'   page of its own (a saved file or a browser tab), so browser chrome such as
-#'   Safari's full-screen toolbar does not cover it. Not used in the RStudio
-#'   viewer, documents or Shiny. Use `0` for none.
+#' @param top_offset Minimum height in pixels of the band above the toolbar
+#'   (title, notes and data sizes) when the viewer fills a page of its own (a
+#'   saved file or a browser tab), so browser chrome such as Safari's
+#'   full-screen toolbar does not cover the toolbar. Elsewhere the band is
+#'   only as tall as its contents. Use `0` for no minimum.
 #' @param rownames Include row names as a first column? `NULL` includes them
 #'   only when the rows are named (as in `mtcars`).
 #' @param max_bytes Warn when the embedded parquet data is larger than this
@@ -40,11 +44,17 @@
 #'
 #' @return An htmlwidget.
 #' @section In the viewer:
+#' * The band at the top shows the title, notes, the size of the embedded data
+#'   and the estimated size of **Export CSV** for the current rows and columns.
 #' * **Columns** opens a searchable list of every column with its type,
-#'   distinct count, share missing, range and a small distribution chart. The
-#'   chart darkens the part of each column that the current filters keep.
-#'   Columns in the table are listed first, in table order; drag them (or use
-#'   Alt+Up/Down) to reorder the table.
+#'   distinct count, share missing, range and a small distribution chart
+#'   (hover a bar for its counts). The chart darkens the part of each column
+#'   that the current filters keep. The checkbox adds or removes a column;
+#'   clicking the rest of an item shows its details (summary statistics and
+#'   counts per value or range); dragging an item places it in the table
+#'   (Alt+Up/Down also reorders). Drag the panel's right edge to resize it.
+#' * A funnel appears next to a filtered column's name; click it to switch
+#'   that filter off and on without losing it.
 #' * Each header has a filter (range, checklist, text or TRUE/FALSE) and an
 #'   options button for the match mode (contains, regular expression, exact),
 #'   case sensitivity, "everything but" (invert, missing values included),
@@ -58,20 +68,23 @@
 #'   for joining back to the data in R.
 #' * **WHERE** takes a SQL condition over any column, for example
 #'   `comment REGEXP 'review|call' AND income IS NOT NULL`. Click `?` for the
-#'   syntax.
+#'   syntax. **Full query** shows the column filters, search and WHERE
+#'   condition combined as one condition, to copy or edit.
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
 #' * Toolbar switches change the theme and turn on a monospace font.
 #'
 #' @examples
 #' if (interactive()) {
 #'   pqview(mtcars)
-#'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris")
+#'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
+#'          notes = "Fisher's iris data, 150 flowers")
 #'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "mono")
 #' }
 #' @export
 pqview <- function(data,
                    columns = NULL,
                    title = NULL,
+                   notes = NULL,
                    digits = 7,
                    where = NULL,
                    theme = c("auto", "light", "dark"),
@@ -87,6 +100,7 @@ pqview <- function(data,
   stopifnot(
     is.null(columns) || is.character(columns),
     is.null(title) || (is.character(title) && length(title) == 1L),
+    is.null(notes) || is.character(notes),
     is.null(where) || (is.character(where) && length(where) == 1L && !is.na(where)),
     is.numeric(digits), length(digits) == 1L, digits >= 1, digits <= 17,
     is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0
@@ -114,6 +128,8 @@ pqview <- function(data,
   )
   if (!is.null(columns)) x$columns <- as.list(columns)
   if (!is.null(title)) x$title <- title
+  notes <- notes[!is.na(notes)]
+  if (length(notes)) x$notes <- paste(notes, collapse = "\n")
   if (!is.null(where) && nzchar(trimws(where))) x$where <- where
 
   htmlwidgets::createWidget(
