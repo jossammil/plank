@@ -31,18 +31,23 @@ function csvCell(col, i) {
 /**
  * @param {object[]} cols columns to write, in order
  * @param {Uint32Array} view row indices to write, in order
+ * @param {object} [opts] { rowNumbers: add a leading column with the 1-based original row number }
  * @returns {string[]} chunks of CSV text (pass straight to a Blob)
  */
-export function toCSV(cols, view) {
-  const parts = [cols.map((c) => quote(c.name)).join(',') + '\r\n']
+export function toCSV(cols, view, opts = {}) {
+  const rowNumbers = !!opts.rowNumbers
+  const names = cols.map((c) => c.name)
+  let rowName = 'row'
+  while (names.includes(rowName)) rowName = '.' + rowName
+  const parts = [(rowNumbers ? [rowName, ...names] : names).map(quote).join(',') + '\r\n']
   const k = cols.length
   const CHUNK = 5000
   let buf = []
   for (let r = 0; r < view.length; r++) {
     const i = view[r]
-    let line = ''
+    let line = rowNumbers ? String(i + 1) : ''
     for (let c = 0; c < k; c++) {
-      if (c) line += ','
+      if (c || rowNumbers) line += ','
       line += csvCell(cols[c], i)
     }
     buf.push(line)

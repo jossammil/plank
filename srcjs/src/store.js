@@ -154,7 +154,7 @@ export function typeTag(col) {
     case 'date': return 'date'
     case 'datetime': return 'dttm'
     case 'boolean': return 'lgl'
-    case 'category': return col.factor ? 'fct' : 'chr'
+    case 'category': return col.marker ? 'mark' : col.factor ? 'fct' : 'chr'
     default: return 'chr'
   }
 }
@@ -209,8 +209,18 @@ export function sortKey(col) {
   if (col.num) {
     key = col.num
   } else if (col.type === 'category') {
+    // Marker levels are kept in the order they were added; sort them by text.
+    let rank = null
+    if (col.marker) {
+      const idx = col.levels.map((_, c) => c).sort((a, b) => collator.compare(col.levels[a], col.levels[b]))
+      rank = new Float64Array(col.levels.length)
+      idx.forEach((c, r) => { rank[c] = r })
+    }
     key = new Float64Array(n)
-    for (let i = 0; i < n; i++) key[i] = col.codes[i] < 0 ? NaN : col.codes[i]
+    for (let i = 0; i < n; i++) {
+      const c = col.codes[i]
+      key[i] = c < 0 ? NaN : rank ? rank[c] : c
+    }
   } else {
     const str = col.str
     const idx = []

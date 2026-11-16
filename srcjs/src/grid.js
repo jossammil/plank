@@ -30,6 +30,7 @@ const OPT_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="t
 /** Short labels for the options in effect on a column, shown in its header. */
 function badgeList(col, spec) {
   const out = []
+  if (spec.join === 'or') out.push({ text: 'OR', title: 'OR filter: a row needs to match this or another OR filter' })
   if (spec.invert) out.push({ text: 'NOT', title: 'Showing everything except the matches' })
   if (col.type === 'string') {
     if (spec.mode === 'regex') out.push({ text: '.*', title: 'Regular expression' })
@@ -50,6 +51,7 @@ export class Grid {
    * @param {(name: string) => object} opts.getSpec filter spec for a column
    * @param {(name: string, debounced: boolean) => void} opts.onFilter
    * @param {(name: string, additive: boolean) => void} opts.onSort
+   * @param {(col: object, row: number, cell: HTMLElement) => void} [opts.onMarkCell] click on a marker cell
    */
   constructor(host, opts) {
     this.opts = opts
@@ -72,7 +74,17 @@ export class Grid {
     this.empty = h('div', { class: 'pqv-empty' })
     host.append(this.scroller, this.empty)
 
-    this.scroller.addEventListener('scroll', () => this.schedule(), { passive: true })
+    this.scroller.addEventListener('scroll', () => {
+      // A popover attached to a cell would drift away from it.
+      if (this.pop && this.pop.cell) this.closePop()
+      this.schedule()
+    }, { passive: true })
+    this.rowsEl.addEventListener('click', (e) => {
+      const cell = e.target.closest && e.target.closest('.pqv-markcell')
+      if (!cell || !this.opts.onMarkCell || cell._row === undefined) return
+      if (this.pop && this.pop.anchor === cell) this.closePop()
+      else this.opts.onMarkCell(cell._col, cell._row, cell)
+    })
     this.rowsEl.addEventListener('mouseover', (e) => {
       const cell = e.target.closest && e.target.closest('.pqv-cell')
       if (!cell) return
@@ -240,7 +252,7 @@ export class Grid {
       else this.openOptions(col, spec, opt, () => { refresh(); this.opts.onFilter(col.name, false) })
     })
     refresh()
-    const cell = h('div', { class: 'pqv-hcell', role: 'columnheader' },
+    const cell = h('div', { class: col.marker ? 'pqv-hcell pqv-hmarker' : 'pqv-hcell', role: 'columnheader' },
       nameBtn,
       h('div', { class: 'pqv-hfilter' }, controls.nodes, opt),
       resizer)
@@ -329,6 +341,19 @@ export class Grid {
     return { nodes: out, refresh }
   }
 
+  /** Rebuild one column's header (for example after a marker column changed). */
+  refreshColumn(name) {
+    const k = this.cols.findIndex((c) => c.name === name)
+    if (k < 0) return
+    const old = this.head.children[k + 1]
+    if (this.pop && old.contains(this.pop.anchor)) this.closePop()
+    const cell = this.headCell(this.cols[k])
+    cell.style.width = old.style.width
+    old.replaceWith(cell)
+    this.updateSortIcons()
+    this.schedule()
+  }
+
   updateSortIcons() {
     const multi = this.sort.length > 1
     for (const cell of this.head.children) {
@@ -375,7 +400,7 @@ export class Grid {
   }
 
   /** Show `el` as a popover under `anchor`, inside the widget. */
-  openPop(anchor, el, focus) {
+  openPop(anchor, el, focus, cell = false) {
     this.closePop()
     const root = this.opts.root
     root.append(el)
@@ -386,7 +411,7 @@ export class Grid {
     el.style.top = ar.bottom - rr.top + 4 + 'px'
     el.style.maxHeight = Math.max(120, rr.height - (ar.bottom - rr.top) - 12) + 'px'
     anchor.setAttribute('aria-expanded', 'true')
-    this.pop = { el, anchor }
+    this.pop = { el, anchor, cell }
     if (focus) focus.focus()
   }
 
@@ -408,6 +433,10 @@ export class Grid {
       sections.push(box)
     }
     const id = 'pqv' + Math.random().toString(36).slice(2, 8)
+
+    group('Combine with other filters', id + 'j',
+      [['and', 'AND: rows must match'], ['or', 'OR: match this or another OR filter']],
+      () => spec.join, (v) => { spec.join = v })
 
     if (col.type === 'string') {
       group('Match', id + 'm', [['contains', 'Contains'], ['regex', 'Regular expression'], ['exact', 'Exact value']],
@@ -437,6 +466,7 @@ export class Grid {
         spec.caseSensitive = false
         spec.invert = false
         spec.na = 'any'
+        spec.join = 'and'
         onChange()
         this.openOptions(col, spec, anchor, onChange)
       },
@@ -542,12 +572,14 @@ export class Grid {
       let cls = 'pqv-cell'
       if (!col) cls += ' pqv-rownum'
       else if (col.type === 'number') cls += ' pqv-num'
+      else if (col.marker) cls += ' pqv-markcell'
       const cell = h('div', { class: cls })
       cell.style.width = this.lefts[c + 1] - this.lefts[c] + 'px'
       const text = document.createTextNode('')
       cell.append(text)
       el.append(cell)
-      cells.push({ cell, text, col, na: false })
+      if (col && col.marker) cell._col = col
+      cells.push({ cell, text, col, na: false, mark: !!(col && col.marker) })
     }
     return { el, cells, alt: false }
   }
@@ -628,13 +660,14 @@ export class Grid {
           c.text.nodeValue = String(i + 1)
           continue
         }
+        if (c.mark) c.cell._row = i
         const t = cellText(c.col, i)
         const na = t === null
         if (c.na !== na) {
           c.cell.classList.toggle('pqv-isna', na)
           c.na = na
         }
-        c.text.nodeValue = na ? 'NA' : t
+        c.text.nodeValue = na ? (c.mark ? '' : 'NA') : t
       }
     }
   }

@@ -7,6 +7,10 @@ import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } fr
 import { toCSV } from './csv.js'
 import { Grid } from './grid.js'
 import { Picker } from './picker.js'
+import { chartSVG, overlayCounts } from './spark.js'
+import {
+  makeMarker, setMarks, usedValues, serializeMarkers, deserializeMarkers, fingerprint,
+} from './markers.js'
 
 const DEFAULT_VISIBLE = 10
 // Above this many cells, columns are only decoded when selected.
@@ -78,7 +82,7 @@ export function mount(el, x) {
   const state = {
     selected: [], cols: [], specs: new Map(), sort: [], view: new Uint32Array(0),
     search: '', searchRegex: loadPref('searchRegex') === '1', searchInvert: false,
-    queryMask: null, queryInvert: false, queryError: null,
+    queryMask: null, queryInvert: false, queryError: null, queryCols: [], computed: false,
   }
   const timings = {}
   const api = { state, timings, ready: null, destroy() {} }
@@ -121,6 +125,10 @@ export function mount(el, x) {
     const searchNotBtn = toggle('NOT', 'Show rows that do NOT match the search', false)
     const status = h('div', { class: 'pqv-status', role: 'status' })
     const clearBtn = h('button', { class: 'pqv-btn', type: 'button', text: 'Clear filters', hidden: true })
+    const markBtn = h('button', {
+      class: 'pqv-btn', type: 'button', text: 'Mark', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+      title: 'Add a marker column and mark the filtered rows',
+    })
     const exportBtn = h('button', {
       class: 'pqv-btn', type: 'button', text: 'Export CSV',
       title: 'Download the filtered rows and visible columns as CSV',
@@ -133,7 +141,7 @@ export function mount(el, x) {
       pickerBtn,
       x.title ? h('div', { class: 'pqv-title', text: x.title, title: x.title }) : null,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
-      status, clearBtn, exportBtn,
+      status, clearBtn, markBtn, exportBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, monoBtn, themeBtn))
 
     // ---- query bar ------------------------------------------------------
@@ -159,6 +167,12 @@ export function mount(el, x) {
     const gridHost = h('div', { class: 'pqv-gridwrap' })
     const body = h('div', { class: 'pqv-body' }, pickerHost, gridHost)
 
+    // Marker columns live alongside the decoded parquet columns.
+    const markers = new Map()
+    const fieldNames = () => ds.fields.map((f) => f.name).concat(Array.from(markers.keys()))
+    const hasCol = (name) => ds.has(name) || markers.has(name)
+    const peekCol = (name) => markers.get(name) || ds.peek(name)
+
     const getSpec = (name) => {
       let spec = state.specs.get(name)
       if (!spec) {
@@ -182,8 +196,10 @@ export function mount(el, x) {
         sort: state.sort.map((s) => ({ col: byName.get(s.name), dir: s.dir })),
       })
       timings.lastCompute = performance.now() - t
+      state.computed = true
       grid.setView(state.view, resetScroll)
       updateStatus()
+      refreshChartsSoon()
     }
     const recomputeSoon = debounce(recompute, 90)
 
@@ -202,6 +218,15 @@ export function mount(el, x) {
           return isActive(c, spec) || hasOptions(spec) || spec.contains !== '' || spec.minText !== '' || spec.maxText !== ''
         })
       clearBtn.hidden = !filtered
+      let orActive = 0
+      for (const c of state.cols) {
+        const spec = getSpec(c.name)
+        if (spec.join === 'or' && isActive(c, spec)) orActive++
+      }
+      status.title = orActive > 1
+        ? `${orActive} OR filters: a row needs to match at least one of them, plus every AND filter`
+        : orActive === 1 ? 'One OR filter works like AND until another column also uses OR' : ''
+      status.classList.toggle('pqv-status-or', orActive > 1)
       pickerBtn.textContent = `Columns ${state.cols.length}/${ds.fields.length}`
       exportBtn.disabled = !state.cols.length
       const err = searchError()
@@ -228,6 +253,7 @@ export function mount(el, x) {
         grid.setSort(state.sort)
         recompute()
       },
+      onMarkCell: (col, row, cell) => openCellMarker(col, row, cell),
     })
     api.grid = grid
 
@@ -282,6 +308,7 @@ export function mount(el, x) {
         return
       }
       picker.updateStats(col)
+      if (!col.error) picker.setChart(col.name, chartFor(col))
       idle(drainStats)
     }
     const queueStats = (col) => {
@@ -291,7 +318,42 @@ export function mount(el, x) {
         idle(drainStats)
       }
     }
+    // ---- distribution charts in the column list ------------------------
+    const filteredView = () => (state.computed && state.view.length !== ds.n ? state.view : null)
+    const chartFor = (col) => {
+      const view = filteredView()
+      return chartSVG(col, view ? overlayCounts(col, view) : null, ds.n)
+    }
+    let chartToken = 0
+    let chartsDirty = false
+    const refreshCharts = () => {
+      const token = ++chartToken
+      if (pickerHost.hidden) {
+        chartsDirty = true
+        return
+      }
+      chartsDirty = false
+      const names = picker.listedNames().filter((name) => picker.hasChart(name) && peekCol(name))
+      let k = 0
+      const step = () => {
+        if (token !== chartToken) return
+        const t = performance.now()
+        while (k < names.length && performance.now() - t < 8) {
+          const col = peekCol(names[k])
+          if (col) picker.setChart(col.name, chartFor(col))
+          k++
+        }
+        // Continue soon rather than at idle time, so charts never lag far behind.
+        if (k < names.length) setTimeout(step, 0)
+        else timings.lastCharts = performance.now()
+      }
+      step()
+    }
+    const refreshChartsSoon = debounce(refreshCharts, 120)
+    api.refreshCharts = refreshCharts
+
     const decode = async (name) => {
+      if (markers.has(name)) return markers.get(name)
       const fresh = !ds.peek(name)
       const col = await ds.column(name)
       if (fresh) queueStats(col)
@@ -301,7 +363,7 @@ export function mount(el, x) {
     let selectToken = 0
     const setSelected = async (names) => {
       const token = ++selectToken
-      const wanted = names.filter((name) => ds.has(name))
+      const wanted = names.filter(hasCol)
       const cols = []
       for (const name of wanted) cols.push(await decode(name))
       if (token !== selectToken) return
@@ -322,9 +384,9 @@ export function mount(el, x) {
       onChange: (names) => setSelected(names),
     })
     api.picker = picker
+    picker.search.addEventListener('input', () => refreshChartsSoon())
 
     // ---- WHERE query ----------------------------------------------------
-    const allNames = ds.fields.map((f) => f.name)
     let queryToken = 0
     const showQueryState = () => {
       const err = state.queryError
@@ -346,11 +408,13 @@ export function mount(el, x) {
         if (!ast) {
           state.queryMask = null
           state.queryError = null
+          state.queryCols = []
           showQueryState()
           recompute()
           return
         }
         const resolved = new Map()
+        const allNames = fieldNames()
         for (const c of columns) {
           const name = resolveColumn(c.name, allNames)
           if (!name) throw new QueryError(`Unknown column '${c.name}'`, c.pos)
@@ -362,6 +426,7 @@ export function mount(el, x) {
         const test = compileQuery(ast, (name) => decoded.get(resolved.get(name)))
         const t = performance.now()
         state.queryMask = evaluateQuery(test, ds.n, state.queryInvert)
+        state.queryCols = Array.from(decoded.keys())
         timings.lastQuery = performance.now() - t
         state.queryError = null
         showQueryState()
@@ -430,11 +495,300 @@ export function mount(el, x) {
       if (prefs.query) queryInput.focus()
     })
 
+    // ---- marker columns -------------------------------------------------
+    const marksKey = 'pqview.marks.' + fingerprint(ds.n, ds.fields.map((f) => f.name), String(x.data || ''))
+    const marksStore = { error: null }
+    const saveMarks = () => {
+      try {
+        if (!markers.size) window.localStorage.removeItem(marksKey)
+        else window.localStorage.setItem(marksKey, JSON.stringify(serializeMarkers(Array.from(markers.values()))))
+        marksStore.error = null
+      } catch (err) {
+        marksStore.error = 'Marks could not be saved in this browser (storage is full or blocked). Export CSV to keep them.'
+      }
+    }
+    const saveMarksSoon = debounce(saveMarks, 400)
+    api.saveMarks = () => {
+      saveMarksSoon.cancel()
+      saveMarks()
+    }
+    api.markers = markers
+    const markerField = (col) => ({ name: col.name, tag: 'mark', label: col.label })
+    const restoreMarks = () => {
+      let saved = null
+      try {
+        const text = window.localStorage.getItem(marksKey)
+        saved = text ? JSON.parse(text) : null
+      } catch {
+        saved = null
+      }
+      const cols = deserializeMarkers(saved, ds.n).filter((col) => !ds.has(col.name))
+      for (const col of cols) {
+        markers.set(col.name, col)
+        picker.addField(markerField(col), false)
+        picker.updateStats(col, true)
+      }
+      return cols
+    }
+
+    const nameProblem = (name, except = null) => {
+      if (!name) return 'Enter a column name.'
+      if (name !== except && fieldNames().includes(name)) return `There is already a column called '${name}'.`
+      return null
+    }
+    const uniqueName = (base) => {
+      const names = new Set(fieldNames())
+      if (!names.has(base)) return base
+      let k = 2
+      while (names.has(`${base}_${k}`)) k++
+      return `${base}_${k}`
+    }
+    const createMarker = async (name) => {
+      const col = makeMarker(name, ds.n)
+      markers.set(name, col)
+      picker.addField(markerField(col))
+      picker.updateStats(col, true)
+      picker.setChart(col.name, chartFor(col))
+      await setSelected(picker.selected())
+      saveMarksSoon()
+      return col
+    }
+    // After marks change: repaint the header, stats, chart and rows, and
+    // re-run a WHERE query that uses the marker.
+    const afterMarks = async (col) => {
+      picker.updateStats(col, true)
+      grid.refreshColumn(col.name)
+      saveMarksSoon()
+      if (state.queryCols.includes(col.name) && queryInput.value.trim()) await runQuery()
+      else recompute(false)
+      picker.setChart(col.name, chartFor(col))
+    }
+    const reselect = async () => {
+      await setSelected(picker.selected())
+      if (state.queryCols.some((name) => !hasCol(name)) && queryInput.value.trim()) await runQuery()
+    }
+    const renameMarker = async (from, to) => {
+      const col = markers.get(from)
+      markers.delete(from)
+      col.name = to
+      markers.set(to, col)
+      const spec = state.specs.get(from)
+      if (spec) {
+        state.specs.delete(from)
+        state.specs.set(to, spec)
+      }
+      for (const s of state.sort) if (s.name === from) s.name = to
+      picker.renameField(from, to)
+      grid.widths.delete(from)
+      await setSelected(picker.selected())
+      saveMarksSoon()
+    }
+    const deleteMarker = async (name) => {
+      markers.delete(name)
+      state.specs.delete(name)
+      picker.removeField(name)
+      await reselect()
+      saveMarksSoon()
+    }
+
+    let lastMarker = null
+    let lastValue = 'yes'
+    const openMarkPanel = (message = '') => {
+      const names = Array.from(markers.keys())
+      const n = state.view.length
+      const select = h('select', { class: 'pqv-input', 'aria-label': 'Marker column' },
+        names.map((name) => h('option', { value: name, text: name })),
+        h('option', { value: '', text: 'New marker column…' }))
+      select.value = lastMarker && markers.has(lastMarker) ? lastMarker : (names[0] || '')
+      const newName = h('input', {
+        class: 'pqv-input', type: 'text', value: uniqueName('mark'), 'aria-label': 'New column name',
+        spellcheck: 'false', autocomplete: 'off',
+      })
+      const listId = 'pqv-marks-' + Math.random().toString(36).slice(2, 8)
+      const datalist = h('datalist', { id: listId })
+      const value = h('input', {
+        class: 'pqv-input', type: 'text', value: lastValue, list: listId, 'aria-label': 'Value to mark',
+        spellcheck: 'false', autocomplete: 'off',
+      })
+      const msg = h('div', { class: 'pqv-mark-msg', 'aria-live': 'polite', text: message || marksStore.error || '' })
+      const fail = (text) => {
+        msg.textContent = text
+        msg.classList.add('pqv-bad-text')
+      }
+      const target = async () => {
+        if (select.value) return markers.get(select.value)
+        const name = newName.value.trim()
+        const problem = nameProblem(name)
+        if (problem) {
+          fail(problem)
+          newName.focus()
+          return null
+        }
+        return createMarker(name)
+      }
+      const markRows = async (clear) => {
+        const v = value.value.trim()
+        if (!clear && !v) {
+          fail('Enter a value to mark with.')
+          value.focus()
+          return
+        }
+        const col = await target()
+        if (!col) return
+        lastMarker = col.name
+        if (!clear) lastValue = v
+        const rows = state.view
+        const changed = setMarks(col, rows, clear ? null : v)
+        await afterMarks(col)
+        const verb = clear ? `Cleared '${col.name}' on` : `Marked '${col.name}' = '${v}' on`
+        openMarkPanel(`${verb} ${rows.length.toLocaleString()} rows (${changed.toLocaleString()} changed).`)
+      }
+      const markRowsBtn = h('button', {
+        class: 'pqv-btn pqv-primary', type: 'button', text: `Mark ${n.toLocaleString()} filtered rows`,
+        onclick: () => markRows(false),
+      })
+      const clearRowsBtn = h('button', {
+        class: 'pqv-btn', type: 'button', text: `Clear marks on ${n.toLocaleString()} filtered rows`,
+        onclick: () => markRows(true),
+      })
+      markRowsBtn.disabled = !n
+      value.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          markRows(false)
+        }
+      })
+
+      const renameInput = h('input', {
+        class: 'pqv-input', type: 'text', 'aria-label': 'Rename marker column', spellcheck: 'false', autocomplete: 'off',
+      })
+      const renameBtn = h('button', {
+        class: 'pqv-btn', type: 'button', text: 'Rename',
+        onclick: async () => {
+          const from = select.value
+          const to = renameInput.value.trim()
+          if (!from || to === from) return
+          const problem = nameProblem(to, from)
+          if (problem) return fail(problem)
+          await renameMarker(from, to)
+          lastMarker = to
+          openMarkPanel(`Renamed '${from}' to '${to}'.`)
+        },
+      })
+      const confirmBox = h('span', { class: 'pqv-mark-confirm', hidden: true })
+      const deleteBtn = h('button', {
+        class: 'pqv-link pqv-danger', type: 'button', text: 'Delete column',
+        onclick: () => {
+          deleteBtn.hidden = true
+          confirmBox.hidden = false
+          confirmBox.textContent = ''
+          confirmBox.append(
+            h('span', { text: `Delete '${select.value}' and its marks? ` }),
+            h('button', {
+              class: 'pqv-link pqv-danger', type: 'button', text: 'Delete',
+              onclick: async () => {
+                const name = select.value
+                await deleteMarker(name)
+                openMarkPanel(`Deleted '${name}'.`)
+              },
+            }),
+            h('button', {
+              class: 'pqv-link', type: 'button', text: 'Keep',
+              onclick: () => {
+                confirmBox.hidden = true
+                deleteBtn.hidden = false
+              },
+            }))
+        },
+      })
+      const newRow = h('label', { class: 'pqv-mark-row' }, h('span', { text: 'Name' }), newName)
+      const manage = h('div', { class: 'pqv-mark-manage' },
+        h('div', { class: 'pqv-mark-row' }, renameInput, renameBtn),
+        h('div', { class: 'pqv-mark-row' }, deleteBtn, confirmBox))
+      const sync = () => {
+        const col = select.value ? markers.get(select.value) : null
+        newRow.hidden = !!col
+        manage.hidden = !col
+        clearRowsBtn.hidden = !col
+        renameInput.value = col ? col.name : ''
+        confirmBox.hidden = true
+        deleteBtn.hidden = false
+        datalist.textContent = ''
+        if (col) for (const v of usedValues(col)) datalist.append(h('option', { value: v }))
+      }
+      select.addEventListener('change', () => {
+        msg.textContent = ''
+        msg.classList.remove('pqv-bad-text')
+        sync()
+      })
+      sync()
+
+      const pop = h('div', { class: 'pqv-pop pqv-markpanel', role: 'dialog', 'aria-label': 'Marker columns' },
+        h('div', { class: 'pqv-pop-title', text: 'Marker columns' }),
+        h('div', { class: 'pqv-mark-body' },
+          h('label', { class: 'pqv-mark-row' }, h('span', { text: 'Column' }), select),
+          newRow,
+          h('label', { class: 'pqv-mark-row' }, h('span', { text: 'Value' }), value, datalist),
+          h('div', { class: 'pqv-mark-actions' }, markRowsBtn, clearRowsBtn),
+          msg,
+          manage),
+        h('p', {
+          class: 'pqv-opt-note',
+          text: 'Marking replaces any value already on those rows. Click a cell in a marker column to set one row. ' +
+            'Marks are saved in this browser; Export CSV includes them, with a row column for joining back in R.',
+        }))
+      grid.openPop(markBtn, pop, value)
+      if (marksStore.error && !message) msg.classList.add('pqv-bad-text')
+    }
+    api.openMarkPanel = openMarkPanel
+    markBtn.addEventListener('click', () => {
+      if (grid.pop && grid.pop.anchor === markBtn) grid.closePop()
+      else openMarkPanel()
+    })
+
+    const openCellMarker = (col, row, cell) => {
+      const current = col.isNull[row] ? null : col.levels[col.codes[row]]
+      const apply = async (v) => {
+        grid.closePop()
+        setMarks(col, [row], v)
+        if (v !== null) lastValue = v
+        lastMarker = col.name
+        await afterMarks(col)
+      }
+      const choices = h('div', { class: 'pqv-cellmark-values' })
+      const values = usedValues(col)
+      if (!values.includes(lastValue)) values.push(lastValue)
+      for (const v of values.slice(0, 12)) {
+        choices.append(h('button', {
+          class: v === current ? 'pqv-chip pqv-on' : 'pqv-chip', type: 'button', text: v,
+          onclick: () => apply(v),
+        }))
+      }
+      const input = h('input', {
+        class: 'pqv-input', type: 'text', placeholder: 'New value', 'aria-label': 'New value',
+        spellcheck: 'false', autocomplete: 'off',
+      })
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          e.preventDefault()
+          apply(input.value.trim())
+        }
+      })
+      const pop = h('div', { class: 'pqv-pop pqv-cellmark', role: 'dialog', 'aria-label': `${col.name}, row ${row + 1}` },
+        h('div', { class: 'pqv-pop-title', text: `${col.name} · row ${(row + 1).toLocaleString()}` }),
+        choices,
+        input,
+        h('div', { class: 'pqv-pop-foot' },
+          h('button', { class: 'pqv-link', type: 'button', text: 'Clear', disabled: current === null, onclick: () => apply(null) })))
+      grid.openPop(cell, pop, input, true)
+    }
+
     // ---- search, clear, export ------------------------------------------
     pickerBtn.addEventListener('click', () => {
       const open = pickerHost.hidden
       pickerHost.hidden = !open
       pickerBtn.setAttribute('aria-expanded', String(open))
+      if (open && chartsDirty) refreshCharts()
     })
     searchInput.addEventListener('input', () => {
       state.search = searchInput.value
@@ -464,6 +818,7 @@ export function mount(el, x) {
       setPressed(queryNotBtn, false)
       state.queryMask = null
       state.queryError = null
+      state.queryCols = []
       queryToken++
       showQueryState()
       grid.setColumns(state.cols)
@@ -471,7 +826,8 @@ export function mount(el, x) {
     })
     exportBtn.addEventListener('click', () => {
       if (!state.cols.length) return
-      const blob = new Blob(toCSV(state.cols, state.view), { type: 'text/csv;charset=utf-8' })
+      const rowNumbers = state.cols.some((c) => c.marker)
+      const blob = new Blob(toCSV(state.cols, state.view, { rowNumbers }), { type: 'text/csv;charset=utf-8' })
       const url = URL.createObjectURL(blob)
       const base = String(x.title || 'data').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'data'
       const a = h('a', { href: url, download: `${base}.csv` })
@@ -493,8 +849,10 @@ export function mount(el, x) {
     const initial = x.columns == null
       ? ds.fields.slice(0, DEFAULT_VISIBLE).map((f) => f.name)
       : [].concat(x.columns)
-    picker.setSelected(initial.filter((name) => ds.has(name)))
-    await setSelected(initial)
+    for (const col of restoreMarks()) initial.push(col.name)
+    picker.setSelected(initial.filter(hasCol))
+    await setSelected(picker.selected())
+    for (const col of markers.values()) picker.setChart(col.name, chartFor(col))
     if (queryInput.value.trim()) await runQuery()
     timings.firstTable = performance.now() - t0
 

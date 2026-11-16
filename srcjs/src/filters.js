@@ -13,13 +13,14 @@ import { displayText, lowerText, sortKey } from './store.js'
  *   codes:         Set of allowed level codes for category columns, null when unset
  *   bool:          true | false | null for boolean columns
  *   invert:        keep everything the value filter does NOT match, missing values included
+ *   join:          'and' (row must match) | 'or' (row must match this or another OR filter)
  * minText/maxText hold what the user typed so inputs can be restored.
  */
 export function emptySpec() {
   return {
     na: 'any', min: null, max: null, minText: '', maxText: '',
     contains: '', mode: 'contains', caseSensitive: false,
-    codes: null, bool: null, invert: false,
+    codes: null, bool: null, invert: false, join: 'and',
   }
 }
 
@@ -71,7 +72,7 @@ export function isActive(col, spec) {
 
 /** Any option that differs from the default (used to flag the options button). */
 export function hasOptions(spec) {
-  return spec.na !== 'any' || spec.invert || spec.mode !== 'contains' || spec.caseSensitive
+  return spec.na !== 'any' || spec.invert || spec.mode !== 'contains' || spec.caseSensitive || spec.join === 'or'
 }
 
 /** Write 1 into `m` where the row matches the value filter. Missing never matches. */
@@ -131,22 +132,51 @@ function matchValues(m, col, spec) {
   }
 }
 
-/** Clear `mask` for rows this column's filter removes. */
-function applyFilter(mask, col, spec) {
-  const n = mask.length
+/**
+ * Per-row result of one column's filter: 1 where the row passes. The value
+ * filter (with invert) and the missing-values rule both apply.
+ */
+export function columnCondition(col, spec, n = col.n) {
+  let m
   if (hasValueFilter(col, spec)) {
-    const m = new Uint8Array(n)
+    m = new Uint8Array(n)
     matchValues(m, col, spec)
     // Inverted keeps the true complement: non-matching rows, missing values included.
-    const keep = spec.invert ? 0 : 1
-    for (let i = 0; i < n; i++) if (m[i] !== keep) mask[i] = 0
+    if (spec.invert) for (let i = 0; i < n; i++) m[i] ^= 1
+  } else {
+    m = new Uint8Array(n).fill(1)
   }
   const nul = col.isNull
   if (spec.na === 'exclude') {
-    for (let i = 0; i < n; i++) if (nul[i]) mask[i] = 0
+    for (let i = 0; i < n; i++) if (nul[i]) m[i] = 0
   } else if (spec.na === 'only') {
-    for (let i = 0; i < n; i++) if (!nul[i]) mask[i] = 0
+    for (let i = 0; i < n; i++) if (!nul[i]) m[i] = 0
   }
+  return m
+}
+
+/**
+ * Combine column filters into `mask`: every AND filter must pass, and when
+ * any OR filters are active a row must pass at least one of them.
+ * Returns the number of active OR filters.
+ */
+export function applyFilters(mask, filters) {
+  const n = mask.length
+  let any = null
+  let orCount = 0
+  for (const { col, spec } of filters) {
+    if (!isActive(col, spec)) continue
+    const m = columnCondition(col, spec, n)
+    if (spec.join === 'or') {
+      orCount++
+      if (!any) any = m
+      else for (let i = 0; i < n; i++) any[i] |= m[i]
+    } else {
+      for (let i = 0; i < n; i++) mask[i] &= m[i]
+    }
+  }
+  if (any) for (let i = 0; i < n; i++) mask[i] &= any[i]
+  return orCount
 }
 
 const NUMERIC_TERM = /^[0-9eE+\-.:, nainf]*$/
@@ -295,9 +325,7 @@ export function computeView({
   searchCols = [], queryMask = null, sort = [],
 }) {
   const mask = queryMask ? Uint8Array.from(queryMask) : new Uint8Array(n).fill(1)
-  for (const { col, spec } of filters) {
-    if (isActive(col, spec)) applyFilter(mask, col, spec)
-  }
+  applyFilters(mask, filters)
   if (search.trim()) applySearch(mask, searchCols, search, searchRegex, searchInvert)
   let count = 0
   for (let i = 0; i < n; i++) count += mask[i]

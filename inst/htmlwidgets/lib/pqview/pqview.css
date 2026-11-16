@@ -14,6 +14,10 @@
   --pqv-accent-fg: #ffffff;
   --pqv-bad: #c62828;
   --pqv-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  --pqv-bar: #c9d6ec;
+  --pqv-bar-on: #1d5fd1;
+  --pqv-bar-na: #e6c4c4;
+  --pqv-mark: #fff6d6;
 
   position: relative;
   box-sizing: border-box;
@@ -64,6 +68,10 @@
   --pqv-accent-fg: #0b1220;
   --pqv-bad: #ff8a80;
   --pqv-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --pqv-bar: #2e3a50;
+  --pqv-bar-on: #7aacff;
+  --pqv-bar-na: #5a3a3d;
+  --pqv-mark: #2c2a1c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -80,6 +88,10 @@
     --pqv-accent-fg: #0b1220;
     --pqv-bad: #ff8a80;
     --pqv-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --pqv-bar: #2e3a50;
+  --pqv-bar-on: #7aacff;
+  --pqv-bar-na: #5a3a3d;
+  --pqv-mark: #2c2a1c;
   }
 }
 
@@ -339,7 +351,7 @@ select.pqv-input {
   flex: none;
   display: flex;
   flex-direction: column;
-  width: 250px;
+  width: 270px;
   max-width: 45%;
   min-height: 0;
   border-right: 1px solid var(--pqv-line);
@@ -431,6 +443,245 @@ select.pqv-input {
 
 .pqv-bad-text {
   color: var(--pqv-bad);
+}
+
+/* picker groups, drag handle and distribution charts */
+.pqv-pgroup {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--pqv-line);
+  background: var(--pqv-head);
+  color: var(--pqv-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.pqv-pgroup[hidden] {
+  display: none;
+}
+
+.pqv-pitem[hidden] {
+  display: none;
+}
+
+.pqv-grip {
+  display: none;
+  flex: none;
+  align-self: center;
+  padding: 2px 1px;
+  color: var(--pqv-muted);
+  cursor: grab;
+  opacity: 0.55;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+}
+
+.pqv-psel .pqv-grip {
+  display: block;
+}
+
+.pqv-pitem:hover .pqv-grip {
+  opacity: 1;
+}
+
+.pqv-pitem.pqv-dragging {
+  opacity: 0.45;
+}
+
+.pqv-pitem.pqv-drop-before {
+  box-shadow: inset 0 2px 0 var(--pqv-accent);
+}
+
+.pqv-pitem.pqv-drop-after {
+  box-shadow: inset 0 -2px 0 var(--pqv-accent);
+}
+
+.pqv-pchart:empty {
+  display: none;
+}
+
+.pqv-pchart {
+  margin-top: 3px;
+  line-height: 0;
+}
+
+.pqv-spk {
+  display: block;
+  width: 100%;
+  height: 18px;
+}
+
+.pqv-spk-hit {
+  fill: transparent;
+}
+
+.pqv-spk-all {
+  fill: var(--pqv-bar);
+}
+
+.pqv-spk-on {
+  fill: var(--pqv-bar-on);
+}
+
+.pqv-spk-na {
+  fill: var(--pqv-bar-na);
+}
+
+.pqv-spk g:hover .pqv-spk-all,
+.pqv-spk g:hover .pqv-spk-na {
+  fill: var(--pqv-line-strong);
+}
+
+/* marker columns */
+.pqv-hmarker {
+  background: var(--pqv-mark);
+}
+
+.pqv-markcell {
+  cursor: pointer;
+  background: var(--pqv-mark);
+}
+
+.pqv-markcell:hover {
+  outline: 1px dashed var(--pqv-accent);
+  outline-offset: -2px;
+}
+
+.pqv-status-or {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.pqv-markpanel {
+  width: 320px;
+}
+
+.pqv-mark-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 4px;
+  overflow: auto;
+}
+
+.pqv-mark-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pqv-mark-row[hidden],
+.pqv-mark-manage[hidden],
+.pqv-mark-confirm[hidden],
+.pqv-btn[hidden],
+.pqv-link[hidden] {
+  display: none;
+}
+
+.pqv-mark-row > span:first-child {
+  flex: none;
+  width: 52px;
+  color: var(--pqv-muted);
+  font-size: 12px;
+}
+
+.pqv-mark-row .pqv-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+}
+
+.pqv-mark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pqv-btn.pqv-primary {
+  border-color: var(--pqv-accent);
+  background: var(--pqv-accent);
+  color: var(--pqv-accent-fg);
+}
+
+.pqv-btn.pqv-primary:hover:not(:disabled) {
+  background: var(--pqv-accent);
+  filter: brightness(1.08);
+}
+
+.pqv-mark-msg {
+  min-height: 16px;
+  color: var(--pqv-muted);
+  font-size: 12px;
+}
+
+.pqv-mark-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--pqv-line);
+}
+
+.pqv-mark-confirm {
+  font-size: 12px;
+}
+
+.pqv-danger {
+  color: var(--pqv-bad);
+}
+
+.pqv-markpanel .pqv-opt-note {
+  padding: 4px 12px 10px;
+  margin: 0;
+}
+
+.pqv-cellmark {
+  width: 240px;
+  padding-bottom: 4px;
+}
+
+.pqv-cellmark > .pqv-input {
+  margin: 0 10px 6px;
+  height: 28px;
+}
+
+.pqv-cellmark-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 10px;
+}
+
+.pqv-chip {
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  border: 1px solid var(--pqv-line-strong);
+  border-radius: 999px;
+  background: var(--pqv-bg);
+  color: var(--pqv-fg);
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pqv-chip:hover {
+  background: var(--pqv-hover);
+}
+
+.pqv-chip.pqv-on {
+  border-color: var(--pqv-accent);
+  background: var(--pqv-accent);
+  color: var(--pqv-accent-fg);
 }
 
 /* ---- grid -------------------------------------------------------------- */

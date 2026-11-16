@@ -76,6 +76,10 @@ expected <- list(
   comment_regex = sum(grepl("^needs|voicemail", demo$comment, ignore.case = TRUE) & !is.na(demo$comment)),
   comment_regex_cs = sum(grepl("^Needs|voicemail", demo$comment) & !is.na(demo$comment)),
   region_exact_west = sum(demo$region == "West"),
-  search_regex_ala = sum(grepl("^ala", demo$state, ignore.case = TRUE))
+  search_regex_ala = sum(grepl("^ala", demo$state, ignore.case = TRUE)),
+
+  # OR column filters: (age >= 61 OR income >= 100000) AND region West
+  or_age_income = sum(demo$age >= 61 | demo$income >= 100000, na.rm = TRUE),
+  or_age_income_west = sum((demo$age >= 61 | demo$income >= 100000) & demo$region == "West", na.rm = TRUE)
 )
 writeLines(jsonlite::toJSON(expected, auto_unbox = TRUE, digits = NA, pretty = TRUE), "examples/demo-expected.json")

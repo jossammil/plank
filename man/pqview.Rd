@@ -79,11 +79,21 @@ also be placed in R Markdown and Quarto documents, used in Shiny with
 
 \itemize{
 \item \strong{Columns} opens a searchable list of every column with its type,
-distinct count, share missing and range.
+distinct count, share missing, range and a small distribution chart. The
+chart darkens the part of each column that the current filters keep.
+Columns in the table are listed first, in table order; drag them (or use
+Alt+Up/Down) to reorder the table.
 \item Each header has a filter (range, checklist, text or TRUE/FALSE) and an
 options button for the match mode (contains, regular expression, exact),
-case sensitivity, "everything but" (invert, missing values included) and
-missing values (show, hide, only).
+case sensitivity, "everything but" (invert, missing values included),
+missing values (show, hide, only) and how the filter combines with the
+others: AND filters must all match; a row must match at least one OR
+filter.
+\item \strong{Mark} adds a marker column and sets a value on every filtered row;
+clicking a marker cell sets one row. Marker columns can be filtered,
+sorted and queried, are saved in the reader's browser, and are included
+in \strong{Export CSV} together with a \code{row} column (the original row number)
+for joining back to the data in R.
 \item \strong{WHERE} takes a SQL condition over any column, for example
 \verb{comment REGEXP 'review|call' AND income IS NOT NULL}. Click \verb{?} for the
 syntax.

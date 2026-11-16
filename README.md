@@ -47,8 +47,13 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 ## What the page does
 
 - **Column picker.** Every column is listed with its type and, once read,
-  its distinct count, share of missing values and range. Search the list and
-  tick the columns you want.
+  its distinct count, share of missing values, range and a small
+  distribution chart (a histogram for numbers and dates, the top values for
+  text and factors). While filters are on, each chart darkens the rows they
+  keep, so you can see what a filter on one column does to the others.
+  Columns in the table are listed first, in table order: a newly ticked
+  column joins the right edge, and you can drag the grip (or press
+  Alt+Up/Down) to reorder.
 - **Per-column filters** under each header: min/max for numbers, from/to for
   dates (`2024`, `2024-03` or `2024-03-15` all work), a checklist for factors
   and low-cardinality text, a text box for other text, and TRUE/FALSE for
@@ -60,8 +65,12 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
     the true complement, so rows where that column is missing are included
     (normal + inverted always add up to every row).
   - *Missing values*: show, hide, or show only missing.
-  - Options in effect appear as badges next to the column name (`NOT`, `.*`,
-    `Aa`, `no NA`).
+  - *Combine*: **AND** (the default) means a row must pass this filter;
+    **OR** means a row must pass this filter or another OR filter. For
+    example, `age` ≥ 61 (OR) and `income` ≥ 100000 (OR) with `region` = West
+    (AND) keeps West rows that are older or richer.
+  - Options in effect appear as badges next to the column name (`OR`, `NOT`,
+    `.*`, `Aa`, `no NA`).
 - **Value finder with regex.** A checklist's "Find value" box has a `.*`
   toggle; "Only these" checks just the values that match.
 - **WHERE query bar.** A SQL condition over any column, shown or not, applied
@@ -70,7 +79,20 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   expression) and `NOT` toggles.
 - **Sorting.** Click a header to sort; shift-click to add more sort keys.
   Missing values always sort last.
+- **Marker columns.** **Mark** creates a new column (say `review`) and sets
+  a value such as `yes` on every filtered row; clicking a cell in a marker
+  column sets, changes or clears a single row. Marker columns filter, sort
+  and work in WHERE queries like any other column. Marks are saved in the
+  reader's browser and included in the CSV export.
 - **Export CSV** of the filtered rows and visible columns, at full precision.
+  When a marker column is included, the file starts with a `row` column (the
+  original row number) so the marks can be joined back in R:
+
+  ```r
+  marks <- read.csv("my_data.csv")
+  my_data$review <- NA
+  my_data$review[marks$row] <- marks$review
+  ```
 - **Switches** for the theme (auto, light, dark), a monospace font, and
   showing the query bar. Each reader's choices are remembered in their
   browser.
@@ -124,6 +146,8 @@ table (11 MB file) in Chrome on a laptop:
   than snappy, or that have nested columns, are rewritten on the R side first.
 - Date-times are shown in the column's time zone, to the millisecond.
 - The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates.
+- Marks live in the browser that made them (keyed to the data); clearing site
+  data removes them, so export a CSV to keep them.
 
 ## Development
 

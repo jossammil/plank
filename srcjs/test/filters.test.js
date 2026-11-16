@@ -143,3 +143,27 @@ test('a query mask combines with the column filters', () => {
   assert.equal(hasOptions(emptySpec()), false)
   assert.equal(hasOptions(spec({ invert: true })), true)
 })
+
+test('OR filters: a row needs any one of them, plus every AND filter', () => {
+  const big = spec({ min: 9, join: 'or' })
+  const c = spec({ codes: new Set([0]), join: 'or' }) // level 'c'
+  assert.deepEqual(rows({ filters: [{ col: num, spec: big }, { col: cat, spec: c }] }), [3, 5, 7, 11])
+  assert.deepEqual(rows({
+    filters: [{ col: num, spec: big }, { col: cat, spec: c }, { col: lgl, spec: spec({ bool: true }) }],
+  }), [3, 5])
+})
+
+test('a single OR filter works like AND, and inactive OR filters are ignored', () => {
+  const big = spec({ min: 9, join: 'or' })
+  assert.deepEqual(rows({ filters: [{ col: num, spec: big }] }), [5, 11])
+  assert.deepEqual(rows({ filters: [{ col: num, spec: big }, { col: cat, spec: spec({ join: 'or' }) }] }), [5, 11])
+})
+
+test('OR combines with invert and missing-value rules per column', () => {
+  const c = spec({ codes: new Set([0]), join: 'or' })
+  assert.deepEqual(rows({ filters: [{ col: num, spec: spec({ min: 9, invert: true, join: 'or' }) }, { col: cat, spec: c }] }),
+    [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11])
+  assert.deepEqual(rows({ filters: [{ col: num, spec: spec({ na: 'only', join: 'or' }) }, { col: cat, spec: c }] }),
+    [2, 3, 7, 11])
+  assert.equal(hasOptions(spec({ join: 'or' })), true)
+})
