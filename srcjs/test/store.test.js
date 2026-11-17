@@ -86,3 +86,12 @@ test('an all-missing column is handled', () => {
   assert.equal(cellText(col, 0), null)
   assert.equal(columnStats(col).distinct, 0)
 })
+
+test('columns with no values take their type from the file', async () => {
+  const { buildColumn: build, typeTag: tag } = await import('../src/store.js')
+  assert.equal(tag(build('x', [], { base: 'number', integer: true })), 'int')
+  assert.equal(tag(build('x', [null, null], { base: 'number' })), 'dbl')
+  assert.equal(tag(build('x', [null], { base: 'boolean' })), 'lgl')
+  assert.equal(tag(build('x', [null], {})), 'chr')
+  assert.equal(build('x', [null, null], { base: 'number' }).nullCount, 2)
+})

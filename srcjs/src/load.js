@@ -82,6 +82,8 @@ export function openDataset(buffer, meta = {}, opts = {}) {
   async function decode(field) {
     const info = {
       kind: field.nested ? null : temporalKind(field.element),
+      // Used when a column has no values to look at (no rows, or all missing).
+      base: field.tag === 'int' || field.tag === 'dbl' ? 'number' : field.tag === 'lgl' ? 'boolean' : null,
       integer: field.nested ? null : field.tag === 'int',
       levels: field.meta && field.meta.levels ? [].concat(field.meta.levels) : null,
       tz: field.meta && field.meta.tz,
@@ -124,10 +126,42 @@ export function openDataset(buffer, meta = {}, opts = {}) {
     return col
   }
 
+  /**
+   * Missing count, min and max for a column from the file's footer, without
+   * reading its data. min/max are null when the file does not store them.
+   * Returns null when the footer has no statistics for the column.
+   */
+  function footerStats(name) {
+    const field = byName.get(name)
+    if (!field || field.nested) return null
+    let nulls = 0
+    let min = null
+    let max = null
+    let ranged = true
+    for (const rg of metadata.row_groups) {
+      const chunk = rg.columns.find((c) => c.meta_data && c.meta_data.path_in_schema.length === 1 &&
+        c.meta_data.path_in_schema[0] === name)
+      const st = chunk && chunk.meta_data.statistics
+      if (!st || st.null_count === undefined) return null
+      nulls += Number(st.null_count)
+      if (Number(rg.num_rows) === Number(st.null_count)) continue // all missing in this group
+      if (st.min_value === undefined || st.max_value === undefined || st.min_value === null) {
+        ranged = false
+        continue
+      }
+      const lo = st.min_value instanceof Date ? st.min_value.getTime() : typeof st.min_value === 'bigint' ? Number(st.min_value) : st.min_value
+      const hi = st.max_value instanceof Date ? st.max_value.getTime() : typeof st.max_value === 'bigint' ? Number(st.max_value) : st.max_value
+      if (min === null || lo < min) min = lo
+      if (max === null || hi > max) max = hi
+    }
+    return { nulls, min: ranged ? min : null, max: ranged ? max : null }
+  }
+
   return {
     n,
     fields,
     column,
+    footerStats,
     has: (name) => byName.has(name),
     peek: (name) => cache.get(name) || null,
   }

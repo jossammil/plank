@@ -1,6 +1,6 @@
 dependencies:
   - name: pqview-core
-    version: 0.6.1
+    version: 0.6.2
     src: htmlwidgets/lib/pqview
     script: pqview-core.js
     stylesheet: pqview.css

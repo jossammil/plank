@@ -314,16 +314,38 @@ if (rcheck) {
   check('parquet: types kept', rcheck.parquet.classes, 'character|character|character|integer|numeric|numeric|logical|Date|POSIXct|character')
   check('xlsx: dates are dates', rcheck.xlsx.classes.split('|')[7], 'POSIXct')
 }
-// clipboard: tab-separated text
+// clipboard: tab-separated text. Safari only allows copying while the click
+// is being handled, so record whether the copy call happens inside it.
+await page.evaluate(() => {
+  window.__copyInClick = []
+  let inClick = false
+  document.addEventListener('click', () => {
+    inClick = true
+    setTimeout(() => { inClick = false }, 0)
+  }, true)
+  const exec = document.execCommand.bind(document)
+  document.execCommand = (cmd, ...rest) => {
+    if (cmd === 'copy') window.__copyInClick.push(inClick)
+    return exec(cmd, ...rest)
+  }
+  if (navigator.clipboard) {
+    const write = navigator.clipboard.writeText.bind(navigator.clipboard)
+    navigator.clipboard.writeText = (t) => {
+      window.__copyInClick.push(inClick)
+      return write(t)
+    }
+  }
+})
 await page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
 await page.locator('.pqv-export-item[data-format="clip"]').click()
 await page.waitForFunction(() => /Copied|did not allow/.test(document.querySelector('.pqv-export-msg')?.textContent || ''))
 const clipMsg = await page.locator('.pqv-export-msg').innerText()
+check('copy happens inside the click (Safari rule)', await page.evaluate(() => window.__copyInClick[0]), true)
 check('clipboard copy reported', clipMsg, `Copied ${expected.region_exact_west.toLocaleString('en-US')} rows to the clipboard.`)
 if (engine === 'chromium') {
   const clip = await page.evaluate(() => navigator.clipboard.readText()).catch(() => null)
   if (clip) {
-    const lines = clip.trimEnd().split('\r\n')
+    const lines = clip.trimEnd().split(/\r?\n/)
     check('clipboard rows', lines.length - 1, expected.region_exact_west)
     check('clipboard is tab-separated', lines[0], shownCols.replace(/\|/g, '\t'))
   }

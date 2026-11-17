@@ -7,6 +7,7 @@ import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } fr
 import { toCSV } from './csv.js'
 import { toXLSX, toRDS, toParquet, toTSV, XLSX_MAX_ROWS } from './export.js'
 import { Grid } from './grid.js'
+import { formatNumber, formatDate, formatDateTime, makeZone } from './format.js'
 import { Picker } from './picker.js'
 import { chartSVG, overlayCounts, detailHTML } from './spark.js'
 import { fullQueryParts, formatFullQuery } from './sql.js'
@@ -508,6 +509,24 @@ export function mount(el, x) {
       onDetail: (name, box) => fillDetail(name, box),
     })
     api.picker = picker
+    // Missing share and range from the file's footer, shown before a column is read.
+    const previewText = (field) => {
+      const st = ds.footerStats(field.name)
+      if (!st) return ''
+      const parts = []
+      if (st.nulls && ds.n) {
+        const pct = (st.nulls / ds.n) * 100
+        parts.push(`${pct < 0.1 ? '<0.1' : pct >= 10 ? pct.toFixed(0) : pct.toFixed(1)}% NA`)
+      }
+      if (st.min !== null && st.max !== null && typeof st.min === 'number' && !(field.meta && field.meta.levels)) {
+        const fmt = field.tag === 'date' ? formatDate
+          : field.tag === 'dttm' ? ((zone) => (v) => formatDateTime(v, zone))(makeZone(field.meta && field.meta.tz))
+            : field.tag === 'int' || field.tag === 'dbl' ? (v) => formatNumber(v, x.digits || 7) : null
+        if (fmt) parts.push(st.min === st.max ? fmt(st.min) : `${fmt(st.min)} to ${fmt(st.max)}`)
+      }
+      return parts.join(' · ')
+    }
+    for (const f of ds.fields) if (!ds.peek(f.name)) picker.setPreview(f.name, previewText(f))
     picker.search.addEventListener('input', () => refreshChartsSoon())
 
     // ---- WHERE query ----------------------------------------------------
@@ -619,21 +638,35 @@ export function mount(el, x) {
       updateFullQuery()
       grid.schedule()
     })
-    const copyText = async (text) => {
+    // Copying must happen while the browser is still handling the click:
+    // Safari (Mac and iPhone) refuses it after any pause. So copyText does
+    // its work synchronously when called from a click handler, first with
+    // the classic select-and-copy (allowed in every browser during a click,
+    // and on file:// pages), then with the Clipboard API.
+    const execCopy = (text) => {
+      const active = document.activeElement
+      const area = h('textarea', { class: 'pqv-offscreen', readonly: '', 'aria-hidden': 'true' })
+      area.value = text
+      area.style.fontSize = '12pt' // stops iOS zooming in on focus
+      el.append(area)
+      let ok = false
       try {
-        await navigator.clipboard.writeText(text)
-        return true
-      } catch {
-        // Clipboard API unavailable (some browsers block it for file:// pages).
-        const area = h('textarea', { class: 'pqv-offscreen', 'aria-hidden': 'true' })
-        area.value = text
-        el.append(area)
         area.select()
-        let ok = false
-        try { ok = document.execCommand('copy') } catch { ok = false }
-        area.remove()
-        return ok
+        area.setSelectionRange(0, text.length)
+        ok = document.execCommand('copy')
+      } catch {
+        ok = false
       }
+      area.remove()
+      if (active && active !== document.body && active.focus) active.focus({ preventScroll: true })
+      return ok
+    }
+    const copyText = (text) => {
+      if (execCopy(text)) return Promise.resolve(true)
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text).then(() => true, () => false)
+      }
+      return Promise.resolve(false)
     }
     fullCopy.addEventListener('click', async () => {
       const ok = await copyText(api.fullQuery())
@@ -1071,11 +1104,14 @@ export function mount(el, x) {
           for (const b of list.querySelectorAll('button')) b.disabled = true
           msg.className = 'pqv-export-msg'
           msg.textContent = 'Preparing…'
-          // Let the message paint before the work starts.
-          await new Promise((resolve) => setTimeout(resolve, 20))
+          const t = performance.now()
+          // Downloads pause briefly so "Preparing…" can paint first. Copying
+          // starts at once: Safari only allows it inside the click itself.
+          const task = f.key === 'clip'
+            ? runExport(f.key)
+            : new Promise((resolve) => setTimeout(resolve, 20)).then(() => runExport(f.key))
           try {
-            const t = performance.now()
-            msg.textContent = await runExport(f.key)
+            msg.textContent = await task
             timings.lastExport = performance.now() - t
           } catch (err) {
             msg.className = 'pqv-export-msg pqv-bad-text'

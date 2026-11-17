@@ -52,7 +52,9 @@ export function toTSV(cols, view, opts = {}) {
     }
     lines.push(line)
   }
-  return lines.join('\r\n') + '\r\n'
+  // Plain newlines: copying through a text box turns \r\n into \n anyway,
+  // and every spreadsheet accepts them on paste.
+  return lines.join('\n') + '\n'
 }
 
 // ---- compression helpers ----------------------------------------------------

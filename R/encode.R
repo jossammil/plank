@@ -17,9 +17,7 @@ is_parquet_file <- function(path) {
 # hints (factor levels, time zones, labels) that parquet does not carry.
 prepare_frame <- function(df, rownames = NULL) {
   df <- as.data.frame(df, stringsAsFactors = FALSE)
-  if (anyDuplicated(names(df))) {
-    names(df) <- make.unique(names(df))
-  }
+  names(df) <- fix_names(names(df))
 
   # Only named rows count; integer row names left behind by subsetting do not.
   has_names <- is.character(.row_names_info(df, type = 0L))
@@ -39,7 +37,18 @@ prepare_frame <- function(df, rownames = NULL) {
       hint$label <- label
     }
 
-    if (is.factor(x)) {
+    value_labels <- attr(x, "labels", exact = TRUE)
+    if (!is.factor(x) && is.atomic(x) && is.null(dim(x)) && is.atomic(value_labels) &&
+      length(value_labels) && !is.null(names(value_labels))) {
+      # Labelled values (haven, labelled, sjlabelled): show the labels.
+      lab <- labelled_column(x, value_labels)
+      df[[name]] <- lab$values
+      if (!is.null(lab$levels)) hint$levels <- as.list(lab$levels)
+      hint$label <- paste0(
+        if (is.null(hint$label)) "" else paste0(hint$label, " "),
+        "(value labels: ", lab$key, ")"
+      )
+    } else if (is.factor(x)) {
       hint$levels <- as.list(levels(x))
     } else if (inherits(x, "POSIXct")) {
       tz <- attr(x, "tzone", exact = TRUE)
@@ -64,6 +73,50 @@ prepare_frame <- function(df, rownames = NULL) {
 }
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Column names the viewer can use: blank or missing names get a placeholder
+# and repeats are numbered, with a message saying what changed.
+fix_names <- function(nms) {
+  if (is.null(nms)) {
+    return(nms)
+  }
+  old <- nms
+  blank <- is.na(nms) | !nzchar(trimws(nms))
+  nms[blank] <- paste0("column_", which(blank))
+  nms <- make.unique(nms)
+  changed <- which(is.na(old) | old != nms)
+  if (length(changed)) {
+    shown <- utils::head(changed, 8L)
+    message(
+      "pqview renamed ", length(changed), " column", if (length(changed) > 1L) "s", " so every name is ",
+      "unique and not blank: ",
+      paste0(ifelse(is.na(old[shown]) | !nzchar(old[shown]), "(blank)", paste0("'", old[shown], "'")),
+        " -> '", nms[shown], "'", collapse = ", "),
+      if (length(changed) > 8L) ", ..."
+    )
+  }
+  nms
+}
+
+# A labelled vector (haven::labelled and similar). When every value has a
+# label it becomes a factor of the labels, in code order; otherwise the
+# values stay as they are. Either way the codes are listed in the column
+# label, so nothing is lost.
+labelled_column <- function(x, labels) {
+  v <- as.vector(unclass(x))
+  attributes(v) <- NULL
+  labels <- labels[order(as.vector(unclass(labels)))]
+  codes <- as.vector(unclass(labels))
+  key <- paste0(codes, " = ", names(labels))
+  key <- paste(c(utils::head(key, 10L), if (length(key) > 10L) "..."), collapse = ", ")
+  present <- !is.na(v)
+  if (all(v[present] %in% codes)) {
+    levels <- unique(names(labels))
+    list(values = factor(names(labels)[match(v, codes)], levels = levels), levels = levels, key = key)
+  } else {
+    list(values = v, levels = NULL, key = key)
+  }
+}
 
 # One list-column cell as compact JSON text; NULL becomes a missing value.
 list_cell <- function(x) {

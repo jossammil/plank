@@ -473,11 +473,25 @@ export class Picker {
     this.tipBar = null
   }
 
+  /**
+   * Stats known before a column is read (from the file's footer). Replaced
+   * by the full stats once the column is decoded.
+   */
+  setPreview(name, text) {
+    const it = this.items.get(name)
+    if (!it || it.done || !text) return
+    it.stats.textContent = text
+    it.stats.title = 'From the file summary. Tick the column or click it for distinct counts and a chart.'
+    it.stats.classList.add('pqv-pstats-preview')
+  }
+
   /** Fill in the type tag and summary stats once a column has been decoded. */
   updateStats(col, force = false) {
     const it = this.items.get(col.name)
     if (!it || (it.done && !force)) return
     it.done = true
+    it.stats.classList.remove('pqv-pstats-preview')
+    it.stats.removeAttribute('title')
     it.tag.textContent = typeTag(col)
     if (col.error) {
       it.stats.textContent = 'Could not decode this column'

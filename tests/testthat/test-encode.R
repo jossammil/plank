@@ -86,3 +86,32 @@ test_that("bad inputs fail clearly", {
   expect_error(encode_data(path), "Not a parquet file")
   expect_error(encode_data(function() NULL), "must be a data frame")
 })
+
+test_that("blank and repeated column names are fixed, with a message", {
+  df <- setNames(data.frame(1:2, 3:4, 5:6, 7:8), c("", "b", "b", NA))
+  expect_message(p <- prepare_frame(df), "renamed 3 columns")
+  expect_identical(names(p$data), c("column_1", "b", "b.1", "column_4"))
+  expect_identical(names(p$meta), names(p$data))
+  expect_silent(prepare_frame(data.frame(a = 1, b = 2)))
+  expect_message(w <- pqview(setNames(data.frame(1:3), "")), "column_1")
+  expect_s3_class(w, "pqview")
+})
+
+test_that("labelled values are shown as their labels", {
+  lab <- structure(c(1, 2, NA, 1), labels = c(Male = 1, Female = 2), label = "Sex",
+                   class = c("haven_labelled", "vctrs_vctr", "double"))
+  part <- structure(c(30, 99, 41), labels = c(Missing = 99), class = c("haven_labelled", "vctrs_vctr", "double"))
+  df <- data.frame(id = 1:4)
+  df$sex <- lab
+  p <- prepare_frame(df)
+  expect_s3_class(p$data$sex, "factor")
+  expect_identical(as.character(p$data$sex), c("Male", "Female", NA, "Male"))
+  expect_identical(p$meta$sex$levels, list("Male", "Female"))
+  expect_identical(p$meta$sex$label, "Sex (value labels: 1 = Male, 2 = Female)")
+
+  df2 <- data.frame(id = 1:3)
+  df2$age <- part
+  p2 <- prepare_frame(df2)
+  expect_identical(p2$data$age, c(30, 99, 41))
+  expect_identical(p2$meta$age$label, "(value labels: 99 = Missing)")
+})

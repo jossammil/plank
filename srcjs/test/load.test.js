@@ -59,3 +59,13 @@ test('columns decode across row groups with the right types', async () => {
   assert.equal(cellText(when, 0), '2024-03-09 06:00:00')
   assert.equal(cellText(when, 24), '2024-03-10 07:00:00')
 })
+
+test('footer statistics give missing counts and ranges without decoding', () => {
+  const ds = openDataset(buffer(), { group: { levels: ['b', 'a', 'c'] } })
+  assert.deepEqual(ds.footerStats('id'), { nulls: 0, min: 1, max: 100 })
+  assert.deepEqual(ds.footerStats('value'), { nulls: 1, min: 0.5, max: 49.5 })
+  assert.equal(ds.footerStats('flag').nulls, 33)
+  assert.deepEqual(ds.footerStats('day'), { nulls: 0, min: Date.UTC(2024, 0, 1), max: Date.UTC(2024, 3, 9) })
+  assert.equal(ds.footerStats('nope'), null)
+  assert.equal(ds.peek('id'), null) // still not decoded
+})

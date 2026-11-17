@@ -1562,3 +1562,7 @@ select.pqv-input {
 .pqv-pfound[hidden] {
   display: none;
 }
+
+.pqv-pstats-preview {
+  font-style: italic;
+}

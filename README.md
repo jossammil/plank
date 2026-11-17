@@ -176,7 +176,11 @@ table (11 MB file) in Chrome on a laptop:
   built for tables up to a few hundred thousand rows; `pqview()` warns when
   the embedded data passes 50 MB.
 - The HTML file is about 1.33x the parquet size plus roughly 240 KB.
-- List columns are shown as JSON text. Parquet files that use codecs other
+- List columns are shown as JSON text.
+- Labelled values (from haven, labelled or sjlabelled) are shown as their
+  labels when every value has one; the codes are listed in the column's
+  tooltip. Blank or repeated column names are renamed (`column_1`, `a.1`)
+  with a message saying so. Parquet files that use codecs other
   than snappy, or that have nested columns, are rewritten on the R side first.
 - Date-times are shown in the column's time zone, to the millisecond.
 - The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates.

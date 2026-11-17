@@ -14,10 +14,10 @@ const cols = [
 const view = Uint32Array.from([2, 0])
 
 test('clipboard text is tab-separated with quoting', () => {
-  assert.equal(toTSV(cols, view), 'n\ts\td\r\n3\t\t1970-01-01\r\n1\t"a\tb"\t2024-01-02\r\n')
+  assert.equal(toTSV(cols, view), 'n\ts\td\n3\t\t1970-01-01\n1\t"a\tb"\t2024-01-02\n')
   const m = makeMarker('mark', 3)
   setMarks(m, [0], '1')
-  assert.equal(toTSV([m], view, { rowNumbers: true }), 'row\tmark\r\n3\t\r\n1\t1\r\n')
+  assert.equal(toTSV([m], view, { rowNumbers: true }), 'row\tmark\n3\t\n1\t1\n')
 })
 
 test('rds is R serialization version 3, gzip-compressed', async () => {

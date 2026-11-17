@@ -29,7 +29,8 @@ function toText(v) {
 /**
  * @param {string} name
  * @param {any[]} values decoded values, null/undefined where missing
- * @param {object} [info] { kind: 'date'|'datetime', integer: boolean, levels: string[], tz, label, rClass, digits }
+ * @param {object} [info] { kind: 'date'|'datetime', base: 'number'|'boolean' (type from the file, used
+ *   when there are no values to look at), integer: boolean, levels: string[], tz, label, rClass, digits }
  */
 export function buildColumn(name, values, info = {}) {
   const n = values.length
@@ -58,6 +59,7 @@ export function buildColumn(name, values, info = {}) {
   let type
   if (info.kind === 'date' || info.kind === 'datetime') type = info.kind
   else if (info.levels) type = 'string'
+  else if (sample === undefined && (info.base === 'number' || info.base === 'boolean')) type = info.base
   else if (typeof sample === 'number' || typeof sample === 'bigint') type = 'number'
   else if (typeof sample === 'boolean') type = 'boolean'
   else if (sample instanceof Date) type = 'datetime'
@@ -90,7 +92,7 @@ export function buildColumn(name, values, info = {}) {
       col.type = type
       col.num = num
       // Prefer the stored type (so whole-number doubles stay "dbl") when known.
-      col.integer = type === 'number' && (info.integer == null ? integer : !!info.integer)
+      col.integer = type === 'number' && (info.integer == null ? integer && min <= max : !!info.integer)
       col.min = min <= max ? min : null
       col.max = min <= max ? max : null
       if (type === 'datetime') {
