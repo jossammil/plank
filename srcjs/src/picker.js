@@ -37,6 +37,22 @@ export class Picker {
       spellcheck: 'false', autocomplete: 'off',
     })
     this.search.addEventListener('input', () => this.applySearch())
+    // Shown while a search is typed: act on just the columns it found.
+    this.foundCount = h('span', { class: 'pqv-pcount' })
+    this.foundBar = h('div', { class: 'pqv-pactions pqv-pfound', hidden: true },
+      this.foundCount,
+      h('button', {
+        class: 'pqv-link', type: 'button', text: 'Add', title: 'Add the found columns to the table',
+        onclick: () => this.setAll(true, true),
+      }),
+      h('button', {
+        class: 'pqv-link', type: 'button', text: 'Remove', title: 'Remove the found columns from the table',
+        onclick: () => this.setAll(false, true),
+      }),
+      h('button', {
+        class: 'pqv-link', type: 'button', text: 'Only', title: 'Show only the found columns in the table',
+        onclick: () => this.onlyFound(),
+      }))
 
     this.selHead = h('div', { class: 'pqv-pgroup' })
     this.selList = h('div', { class: 'pqv-pgroup-list pqv-psel' })
@@ -79,8 +95,15 @@ export class Picker {
         this.search,
         h('div', { class: 'pqv-pactions' },
           this.count,
-          h('button', { class: 'pqv-link', type: 'button', text: 'All', onclick: () => this.setAll(true) }),
-          h('button', { class: 'pqv-link', type: 'button', text: 'None', onclick: () => this.setAll(false) }))),
+          h('button', {
+            class: 'pqv-link', type: 'button', text: 'All', title: 'Show every column in the table',
+            onclick: () => this.setAll(true, false),
+          }),
+          h('button', {
+            class: 'pqv-link', type: 'button', text: 'None', title: 'Remove every column from the table',
+            onclick: () => this.setAll(false, false),
+          })),
+        this.foundBar),
       this.list)
 
     // Resize from the right edge; double-click toggles a wide list.
@@ -208,10 +231,20 @@ export class Picker {
     this.placeOne(name)
   }
 
-  setAll(checked) {
+  /** The table gets exactly the columns the search found, in file order. */
+  onlyFound() {
+    const found = this.fileOrder.filter((name) => !this.items.get(name).row.hidden)
+    const keep = this.order.filter((name) => found.includes(name))
+    this.order = keep.concat(found.filter((name) => !keep.includes(name)))
+    this.place()
+    this.emit()
+  }
+
+  /** Tick or untick every column, or only those the search found. */
+  setAll(checked, foundOnly = false) {
     for (const name of this.fileOrder) {
       const it = this.items.get(name)
-      if (!it.row.hidden) {
+      if (!foundOnly || !it.row.hidden) {
         const k = this.order.indexOf(name)
         if (checked && k < 0) this.order.push(name)
         else if (!checked && k >= 0) this.order.splice(k, 1)
@@ -280,7 +313,13 @@ export class Picker {
 
   applySearch() {
     const q = this.search.value.trim().toLowerCase()
-    for (const it of this.items.values()) it.row.hidden = !!q && !it.lower.includes(q)
+    let k = 0
+    for (const it of this.items.values()) {
+      it.row.hidden = !!q && !it.lower.includes(q)
+      if (!it.row.hidden) k++
+    }
+    this.foundBar.hidden = !q
+    this.foundCount.textContent = `${k} found`
   }
 
   /** Open or close an item's detail panel. */

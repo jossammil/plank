@@ -1558,3 +1558,7 @@ select.pqv-input {
   display: flex;
   gap: 3px;
 }
+
+.pqv-pfound[hidden] {
+  display: none;
+}

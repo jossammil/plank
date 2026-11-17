@@ -62,6 +62,9 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   newly ticked column joins the right edge, and dragging any item places it
   in the table (Alt+Up/Down also reorders). Drag the panel's right edge to
   give the list more room (double-click the edge to widen or narrow it).
+  **All** and **None** tick or untick every column, whatever is typed in
+  "Find column". While a search is typed, **Add**, **Remove** and **Only**
+  act on just the columns it found.
 - **Per-column filters** under each header: min/max for numbers, from/to for
   dates (`2024`, `2024-03` or `2024-03-15` all work), a checklist for factors
   and low-cardinality text, a text box for other text, and TRUE/FALSE for
