@@ -1,7 +1,7 @@
 # Turning data into the parquet bytes and column hints the viewer needs.
 
-# The browser reader decodes these codecs without extra libraries.
-browser_codecs <- c("SNAPPY", "UNCOMPRESSED")
+# Parquet compression codecs the browser reader decodes.
+browser_codecs <- c("GZIP", "SNAPPY", "UNCOMPRESSED")
 
 is_parquet_file <- function(path) {
   size <- file.size(path)
@@ -130,15 +130,23 @@ list_cell <- function(x) {
   out[1L]
 }
 
-frame_to_parquet <- function(df) {
+frame_to_parquet <- function(df, compression = "gzip") {
   path <- tempfile(fileext = ".parquet")
   on.exit(unlink(path))
-  nanoparquet::write_parquet(df, path, compression = "snappy")
+  # gzip level 3 is nearly as small as the default level 6 and twice as fast.
+  level <- if (compression == "gzip") 3L else NA_integer_
+  nanoparquet::write_parquet(
+    df, path,
+    compression = compression,
+    options = nanoparquet::parquet_options(compression_level = level)
+  )
   readBin(path, "raw", file.size(path))
 }
 
 # Returns list(bytes, meta, nrow, ncol) for a data frame or a parquet path.
-encode_data <- function(data, rownames = NULL) {
+# Parquet files the browser can read are embedded as they are; everything
+# else is written with `compression`.
+encode_data <- function(data, rownames = NULL, compression = "gzip") {
   if (is.character(data) && length(data) == 1L && !is.data.frame(data)) {
     path <- data
     if (!file.exists(path)) {
@@ -175,7 +183,7 @@ encode_data <- function(data, rownames = NULL) {
   }
   prepared <- prepare_frame(data, rownames = rownames)
   list(
-    bytes = frame_to_parquet(prepared$data),
+    bytes = frame_to_parquet(prepared$data, compression),
     meta = prepared$meta,
     nrow = nrow(prepared$data),
     ncol = ncol(prepared$data)

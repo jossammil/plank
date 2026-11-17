@@ -11,6 +11,8 @@
   "search_alaska": 1925,
   "age_min": 18,
   "first_sorted_income": "R018630",
+  "first_sorted_comment": "R023389",
+  "last_sorted_comment": "R005330",
   "top_income": 1050657.77,
   "q_age_region": 40405,
   "q_regex": 24060,

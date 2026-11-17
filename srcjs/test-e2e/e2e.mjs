@@ -269,6 +269,15 @@ check('sort income asc: first record', (await firstRow())[1], expected.first_sor
 await hcell('income').locator('.pqv-hname').click()
 await hcell('income').locator('.pqv-hname').click()
 await settle()
+await hcell('comment').locator('.pqv-hname').click()
+await settle()
+check('sort text asc: first record', (await firstRow())[1], expected.first_sorted_comment)
+console.log('   text sort ms:', await page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastCompute.toFixed(0)))
+await hcell('comment').locator('.pqv-hname').click()
+await settle()
+check('sort text desc: first record', (await firstRow())[1], expected.last_sorted_comment)
+await hcell('comment').locator('.pqv-hname').click()
+await settle()
 
 // ---- export: CSV, Excel, R, parquet and clipboard -------------------------
 await query("region = 'West'")

@@ -21,7 +21,7 @@ read_bytes <- function(bytes) {
   )
 }
 
-test_that("a data frame becomes snappy parquet bytes", {
+test_that("a data frame becomes gzip parquet bytes, or snappy on request", {
   enc <- encode_data(sample_frame())
   expect_identical(enc$bytes[1:4], charToRaw("PAR1"))
   expect_identical(utils::tail(enc$bytes, 4), charToRaw("PAR1"))
@@ -29,8 +29,12 @@ test_that("a data frame becomes snappy parquet bytes", {
   expect_equal(enc$ncol, 7)
 
   back <- read_bytes(enc$bytes)
-  expect_identical(back$codec, "SNAPPY")
+  expect_identical(back$codec, "GZIP")
   expect_equal(back$data$id, sample_frame()$id)
+  expect_equal(back$data$name, sample_frame()$name)
+
+  back <- read_bytes(encode_data(sample_frame(), compression = "snappy")$bytes)
+  expect_identical(back$codec, "SNAPPY")
   expect_equal(back$data$name, sample_frame()$name)
 })
 
@@ -58,24 +62,28 @@ test_that("list columns and row names are flattened", {
   expect_identical(names(read_bytes(encode_data(iris[1:3, 1:2])$bytes)$data), c("Sepal.Length", "Sepal.Width"))
 })
 
-test_that("a snappy parquet file is embedded as is", {
+test_that("snappy and gzip parquet files are embedded as they are", {
   path <- tempfile(fileext = ".parquet")
   on.exit(unlink(path))
-  nanoparquet::write_parquet(sample_frame(), path, compression = "snappy")
-  enc <- encode_data(path)
-  expect_identical(enc$bytes, readBin(path, "raw", file.size(path)))
-  expect_equal(enc$nrow, 50)
-  expect_equal(enc$ncol, 7)
+  for (codec in c("snappy", "gzip")) {
+    nanoparquet::write_parquet(sample_frame(), path, compression = codec)
+    enc <- encode_data(path, compression = "snappy")
+    expect_identical(enc$bytes, readBin(path, "raw", file.size(path)))
+    expect_equal(enc$nrow, 50)
+    expect_equal(enc$ncol, 7)
+  }
 })
 
 test_that("other codecs are rewritten for the browser reader", {
   path <- tempfile(fileext = ".parquet")
   on.exit(unlink(path))
-  nanoparquet::write_parquet(sample_frame(), path, compression = "gzip")
-  expect_identical(unique(nanoparquet::read_parquet_metadata(path)$column_chunks$codec), "GZIP")
+  nanoparquet::write_parquet(sample_frame(), path, compression = "zstd")
+  expect_identical(unique(nanoparquet::read_parquet_metadata(path)$column_chunks$codec), "ZSTD")
   back <- read_bytes(encode_data(path)$bytes)
-  expect_identical(back$codec, "SNAPPY")
+  expect_identical(back$codec, "GZIP")
   expect_equal(nrow(back$data), 50)
+  back <- read_bytes(encode_data(path, compression = "snappy")$bytes)
+  expect_identical(back$codec, "SNAPPY")
 })
 
 test_that("bad inputs fail clearly", {

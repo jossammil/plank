@@ -69,3 +69,16 @@ test('footer statistics give missing counts and ranges without decoding', () => 
   assert.equal(ds.footerStats('nope'), null)
   assert.equal(ds.peek('id'), null) // still not decoded
 })
+
+test('gzip-compressed files decode the same as snappy ones', async () => {
+  const gz = readFileSync(new URL('./fixtures/sample-gzip.parquet', import.meta.url))
+  const a = openDataset(buffer())
+  const b = openDataset(gz.buffer.slice(gz.byteOffset, gz.byteOffset + gz.byteLength))
+  assert.deepEqual(b.fields.map((f) => f.tag), a.fields.map((f) => f.tag))
+  for (const f of a.fields) {
+    const x = await a.column(f.name)
+    const y = await b.column(f.name)
+    assert.equal(y.error, null, f.name)
+    for (let i = 0; i < x.n; i++) assert.equal(cellText(y, i), cellText(x, i), `${f.name} row ${i}`)
+  }
+})

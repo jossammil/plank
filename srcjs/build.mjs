@@ -10,6 +10,10 @@ const result = await build({
   platform: 'browser',
   target: ['es2020'],
   legalComments: 'none',
+  banner: {
+    js: '/*! pqview viewer. Bundles hyparquet and hyparquet-writer (MIT, (c) Hyperparam) and ' +
+      'fflate (MIT, (c) 2026 Arjun Barrett); see the COPYRIGHTS file of the pqview R package. */',
+  },
   outfile: '../inst/htmlwidgets/lib/pqview/pqview-core.js',
   metafile: true,
 })

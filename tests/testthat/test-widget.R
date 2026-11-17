@@ -60,6 +60,7 @@ test_that("query, font, theme and offset options reach the browser", {
   expect_null(pqview(iris, where = "  ")$x$where)
 
   expect_error(pqview(iris, font = "comic"))
+  expect_error(pqview(iris, compression = "zstd"))
   expect_error(pqview(iris, where = c("a", "b")))
   expect_error(pqview(iris, top_offset = -1))
 })

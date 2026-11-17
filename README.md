@@ -157,31 +157,38 @@ does not match, including those rows.
 
 The page lists columns from the parquet footer without decoding any data,
 decodes only the columns you select (the rest are read in idle time), keeps
-them in typed arrays, and draws only the rows on screen. On a 100,000 x 30
-table (11 MB file) in Chrome on a laptop:
+them in typed arrays, and draws only the rows on screen. Text columns are
+sorted with radix-sorted keys taken from the browser's own collation, so a
+first sort of a million strings takes well under a second. Measured in Chrome
+on a laptop with the 30-column demo table:
 
-| Step | Time |
-|---|---|
-| Column list ready | ~5 ms |
-| First table drawn | ~125 ms |
-| Numeric, date or category filter | 1-5 ms |
-| Text "contains", regex or global search | 5-20 ms |
-| WHERE query | 5-10 ms |
-| Sort a numeric column | ~30 ms |
-| Redraw while scrolling | < 1 ms |
+| Step | 100,000 rows (8 MB file) | 1,000,000 rows (77 MB file) |
+|---|---|---|
+| Column list ready | ~25 ms | ~45 ms |
+| First table drawn | ~0.2 s | ~1.4 s |
+| Numeric, date or category filter | 1-5 ms | ~10 ms |
+| Text "contains", regex or global search | 10-15 ms | 55-70 ms |
+| WHERE query | 2-10 ms | ~10 ms |
+| Sort a numeric column | ~20 ms | ~250 ms |
+| Sort a text column (first time) | ~65 ms | ~0.45 s |
+| Browser memory | ~80 MB | ~390 MB |
+| Redraw while scrolling | < 1 ms | < 1 ms |
 
 ## Limits
 
-- Everything is held in browser memory, which is what makes it instant. It is
-  built for tables up to a few hundred thousand rows; `pqview()` warns when
-  the embedded data passes 50 MB.
-- The HTML file is about 1.33x the parquet size plus roughly 240 KB.
+- Everything is held in browser memory, which is what makes it instant. It
+  works well up to about a million rows of 30 columns (see the table above);
+  `pqview()` warns when the embedded data passes 50 MB.
+- The data is gzip-compressed parquet by default, about 30% smaller than
+  snappy; `compression = "snappy"` writes and opens a little faster. The HTML
+  file is about 1.33x the parquet size plus roughly 250 KB.
 - List columns are shown as JSON text.
 - Labelled values (from haven, labelled or sjlabelled) are shown as their
   labels when every value has one; the codes are listed in the column's
   tooltip. Blank or repeated column names are renamed (`column_1`, `a.1`)
   with a message saying so. Parquet files that use codecs other
-  than snappy, or that have nested columns, are rewritten on the R side first.
+  than gzip or snappy, or that have nested columns, are rewritten on the R
+  side first.
 - Date-times are shown in the column's time zone, to the millisecond.
 - The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates.
 - Marks live in the browser that made them (keyed to the data); clearing site
@@ -192,8 +199,10 @@ table (11 MB file) in Chrome on a laptop:
 ## Development
 
 The browser code lives in `srcjs/` and is bundled with
-[hyparquet](https://github.com/hyparam/hyparquet) and
-[hyparquet-writer](https://github.com/hyparam/hyparquet-writer) into
+[hyparquet](https://github.com/hyparam/hyparquet),
+[hyparquet-writer](https://github.com/hyparam/hyparquet-writer) and
+[fflate](https://github.com/101arrowz/fflate) (gzip), all MIT-licensed (see
+`inst/COPYRIGHTS`), into
 `inst/htmlwidgets/lib/pqview/pqview-core.js`. The bundle is committed, so
 Node is only needed to change the JavaScript.
 

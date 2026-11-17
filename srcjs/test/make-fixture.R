@@ -1,4 +1,5 @@
-# Regenerates test/fixtures/sample.parquet. Run from srcjs/: Rscript test/make-fixture.R
+# Regenerates test/fixtures/sample.parquet and sample-gzip.parquet.
+# Run from srcjs/: Rscript test/make-fixture.R
 n <- 100
 df <- data.frame(
   id = seq_len(n),
@@ -13,5 +14,11 @@ df <- data.frame(
 nanoparquet::write_parquet(
   df, "test/fixtures/sample.parquet",
   compression = "snappy",
+  options = nanoparquet::parquet_options(num_rows_per_row_group = 40)
+)
+# The same data with gzip pages, as pqview() writes by default.
+nanoparquet::write_parquet(
+  df, "test/fixtures/sample-gzip.parquet",
+  compression = "gzip",
   options = nanoparquet::parquet_options(num_rows_per_row_group = 40)
 )

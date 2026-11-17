@@ -15,6 +15,7 @@ pqview(
   font = c("mono", "sans"),
   top_offset = 56,
   rownames = NULL,
+  compression = c("gzip", "snappy"),
   max_bytes = 5e+07,
   width = NULL,
   height = NULL,
@@ -59,6 +60,11 @@ only as tall as its contents. Use \code{0} for no minimum.}
 \item{rownames}{Include row names as a first column? \code{NULL} includes them
 only when the rows are named (as in \code{mtcars}).}
 
+\item{compression}{How the embedded data is compressed. \code{"gzip"} (the
+default) makes files about 30\% smaller than \code{"snappy"}, which is a
+little faster to write and to open. A parquet file given as \code{data} is
+embedded as it is when it uses gzip, snappy or no compression.}
+
 \item{max_bytes}{Warn when the embedded parquet data is larger than this
 many bytes. Everything is held in browser memory, so very large files
 will be slow to open.}
@@ -73,8 +79,8 @@ An htmlwidget.
 }
 \description{
 Creates an interactive table that runs entirely in the browser. The data is
-embedded as snappy-compressed parquet and decoded client-side, so the
-result needs no server: pick columns from a searchable list, filter each
+embedded as compressed parquet and decoded client-side, so the result
+needs no server: pick columns from a searchable list, filter each
 column, sort, search and export the filtered rows.
 }
 \details{

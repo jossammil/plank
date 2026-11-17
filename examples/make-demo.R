@@ -60,6 +60,10 @@ expected <- list(
   search_alaska = sum(demo$state == "Alaska"),
   age_min = min(demo$age, na.rm = TRUE),
   first_sorted_income = sprintf("%s", demo$record_id[order(demo$income, seq_len(n))][1]),
+  # The comments differ in letters and four-digit numbers only, so byte
+  # order matches the viewer's natural order.
+  first_sorted_comment = sprintf("%s", demo$record_id[order(demo$comment, seq_len(n), method = "radix")][1]),
+  last_sorted_comment = sprintf("%s", demo$record_id[order(demo$comment, -seq_len(n), method = "radix", decreasing = TRUE)][1]),
   top_income = max(demo$income, na.rm = TRUE),
 
   # WHERE queries (same text as typed in the browser)

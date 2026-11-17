@@ -8,6 +8,7 @@
 // Every column also carries isNull: Uint8Array and nullCount.
 
 import { formatNumber, formatDate, formatDateTime, makeZone } from './format.js'
+import { textSortKey } from './textsort.js'
 
 export const CATEGORY_MAX = 50
 
@@ -204,8 +205,8 @@ export function lowerText(col) {
 
 /**
  * Sort key per row as a Float64Array, NaN where missing, cached.
- * Strings get a rank from a natural-order collation, so later sorts are
- * plain numeric comparisons.
+ * Strings get a rank from a natural-order collation (see textsort.js), so
+ * later sorts are plain numeric comparisons.
  */
 export function sortKey(col) {
   if (col._key) return col._key
@@ -227,19 +228,7 @@ export function sortKey(col) {
       key[i] = c < 0 ? NaN : rank ? rank[c] : c
     }
   } else {
-    const str = col.str
-    const idx = []
-    for (let i = 0; i < n; i++) if (str[i] !== null) idx.push(i)
-    idx.sort((a, b) => collator.compare(str[a], str[b]))
-    key = new Float64Array(n).fill(NaN)
-    let rank = -1
-    let prev
-    for (let k = 0; k < idx.length; k++) {
-      const s = str[idx[k]]
-      if (k === 0 || collator.compare(prev, s) !== 0) rank++
-      key[idx[k]] = rank
-      prev = s
-    }
+    key = textSortKey(col.str, collator)
   }
   col._key = key
   return key

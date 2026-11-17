@@ -1,6 +1,7 @@
 // Opens the embedded parquet bytes with hyparquet and decodes columns on demand.
 
 import { parquetMetadata, parquetSchema, parquetRead, parquetReadObjects } from 'hyparquet'
+import { gunzipSync } from 'fflate'
 import { buildColumn } from './store.js'
 
 export function decodeBase64(b64) {
@@ -15,6 +16,11 @@ export function decodeBase64(b64) {
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out
+}
+
+// hyparquet decodes snappy itself; gzip pages go through fflate.
+const compressors = {
+  GZIP: (input, length) => gunzipSync(input, { out: new Uint8Array(length) }),
 }
 
 // Keep dates and timestamps as epoch milliseconds instead of Date objects.
@@ -94,7 +100,7 @@ export function openDataset(buffer, meta = {}, opts = {}) {
     try {
       let values
       if (field.nested) {
-        const rows = await parquetReadObjects({ file: buffer, metadata, columns: [field.name] })
+        const rows = await parquetReadObjects({ file: buffer, metadata, columns: [field.name], compressors })
         values = rows.map((r) => r[field.name])
       } else {
         values = new Array(n)
@@ -103,6 +109,7 @@ export function openDataset(buffer, meta = {}, opts = {}) {
           metadata,
           columns: [field.name],
           parsers,
+          compressors,
           onChunk({ columnData, rowStart, rowEnd }) {
             const end = Math.min(rowEnd, n)
             for (let i = rowStart, j = 0; i < end; i++, j++) values[i] = columnData[j]

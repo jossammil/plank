@@ -1,8 +1,8 @@
 #' View a data frame or parquet file in the browser
 #'
 #' Creates an interactive table that runs entirely in the browser. The data is
-#' embedded as snappy-compressed parquet and decoded client-side, so the
-#' result needs no server: pick columns from a searchable list, filter each
+#' embedded as compressed parquet and decoded client-side, so the result
+#' needs no server: pick columns from a searchable list, filter each
 #' column, sort, search and export the filtered rows.
 #'
 #' Printing the result shows it in the RStudio viewer or a browser. It can
@@ -36,6 +36,10 @@
 #'   only as tall as its contents. Use `0` for no minimum.
 #' @param rownames Include row names as a first column? `NULL` includes them
 #'   only when the rows are named (as in `mtcars`).
+#' @param compression How the embedded data is compressed. `"gzip"` (the
+#'   default) makes files about 30% smaller than `"snappy"`, which is a
+#'   little faster to write and to open. A parquet file given as `data` is
+#'   embedded as it is when it uses gzip, snappy or no compression.
 #' @param max_bytes Warn when the embedded parquet data is larger than this
 #'   many bytes. Everything is held in browser memory, so very large files
 #'   will be slow to open.
@@ -99,12 +103,14 @@ pqview <- function(data,
                    font = c("mono", "sans"),
                    top_offset = 56,
                    rownames = NULL,
+                   compression = c("gzip", "snappy"),
                    max_bytes = 50e6,
                    width = NULL,
                    height = NULL,
                    elementId = NULL) {
   theme <- match.arg(theme)
   font <- match.arg(font)
+  compression <- match.arg(compression)
   stopifnot(
     is.null(columns) || is.character(columns),
     is.null(title) || (is.character(title) && length(title) == 1L),
@@ -114,7 +120,7 @@ pqview <- function(data,
     is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0
   )
 
-  enc <- encode_data(data, rownames = rownames)
+  enc <- encode_data(data, rownames = rownames, compression = compression)
   if (length(enc$bytes) > max_bytes) {
     warning(
       "The embedded data is ", format_bytes(length(enc$bytes)),
