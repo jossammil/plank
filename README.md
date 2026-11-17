@@ -117,6 +117,12 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   my_data$review <- NA
   my_data$review[marks$row] <- marks$review
   ```
+- **Undo and redo.** The two arrow buttons (or Ctrl/⌘+Z and Shift+Ctrl/⌘+Z
+  outside a text box) step back and forward through changes to the columns
+  and their order, filters, search, WHERE query, sort and marker columns.
+  Unticking a column drops its filter, and deleting a marker column drops
+  its marks; undo brings both back. Up to 100 steps are kept until the page
+  is closed.
 - **Switches** for the WHERE bar, See Query, a monospace font (on by
   default) and the theme (auto, light, dark). Each reader's choices are
   remembered in their browser.

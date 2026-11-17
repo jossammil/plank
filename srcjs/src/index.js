@@ -138,6 +138,10 @@ export function mount(el, x) {
     const searchNotBtn = toggle('NOT', 'Show rows that do NOT match the search', false)
     const status = h('div', { class: 'pqv-status', role: 'status' })
     const clearBtn = h('button', { class: 'pqv-btn', type: 'button', text: 'Clear filters', hidden: true })
+    const undoBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button', disabled: true })
+    undoBtn.innerHTML = svg('<path d="M6 3 2.5 6.5 6 10"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/>')
+    const redoBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button', disabled: true })
+    redoBtn.innerHTML = svg('<path d="M10 3l3.5 3.5L10 10"/><path d="M13.5 6.5h-7a4 4 0 0 0 0 8H9"/>')
     const markBtn = h('button', {
       class: 'pqv-btn', type: 'button', text: 'Mark', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
       title: 'Add a marker column and mark the filtered rows',
@@ -170,7 +174,7 @@ export function mount(el, x) {
     const toolbar = h('div', { class: 'pqv-toolbar' },
       pickerBtn,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
-      status, clearBtn, markBtn, exportBtn,
+      status, h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, markBtn, exportBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, fullBtn, monoBtn, themeBtn))
 
     // ---- query bar ------------------------------------------------------
@@ -244,6 +248,7 @@ export function mount(el, x) {
       refreshChartsSoon()
       updateFullQuery()
       updateExportSize()
+      recordSoon()
     }
     const recomputeSoon = debounce(recompute, 90)
 
@@ -389,6 +394,7 @@ export function mount(el, x) {
 
     api.destroy = () => {
       grid.destroy()
+      document.removeEventListener('keydown', onUndoKey)
       if (media && media.removeEventListener) media.removeEventListener('change', onScheme)
     }
 
@@ -715,7 +721,9 @@ export function mount(el, x) {
       while (names.has(`${base}_${k}`)) k++
       return `${base}_${k}`
     }
+    let marksVer = 0
     const createMarker = async (name) => {
+      marksVer++
       const col = makeMarker(name, ds.n)
       markers.set(name, col)
       picker.addField(markerField(col))
@@ -728,6 +736,7 @@ export function mount(el, x) {
     // After marks change: repaint the header, stats, chart and rows, and
     // re-run a WHERE query that uses the marker.
     const afterMarks = async (col) => {
+      marksVer++
       picker.updateStats(col, true)
       grid.refreshColumn(col.name)
       saveMarksSoon()
@@ -740,6 +749,7 @@ export function mount(el, x) {
       if (state.queryCols.some((name) => !hasCol(name)) && queryInput.value.trim()) await runQuery()
     }
     const renameMarker = async (from, to) => {
+      marksVer++
       const col = markers.get(from)
       markers.delete(from)
       col.name = to
@@ -756,6 +766,7 @@ export function mount(el, x) {
       saveMarksSoon()
     }
     const deleteMarker = async (name) => {
+      marksVer++
       markers.delete(name)
       state.specs.delete(name)
       picker.removeField(name)
@@ -1090,6 +1101,151 @@ export function mount(el, x) {
     }
     timings.columnsListed = performance.now() - t0
 
+    // ---- undo / redo ------------------------------------------------------
+    // Each step is a snapshot of what decides the table: the columns and
+    // their order, every filter, the search, the WHERE query, the sort and
+    // the marker columns. A burst of typing counts as one step.
+    const HISTORY_MAX = 100
+    const history = { past: [], current: null, future: [], busy: false }
+    let marksSnap = null
+    const snapshotMarks = () => {
+      if (!marksSnap || marksSnap.ver !== marksVer) {
+        marksSnap = {
+          ver: marksVer,
+          cols: Array.from(markers.values(), (c) => ({ name: c.name, levels: c.levels.slice(), codes: c.codes.slice() })),
+        }
+      }
+      return marksSnap
+    }
+    const takeSnapshot = () => {
+      const order = picker.selected()
+      const specs = []
+      for (const name of order) {
+        const sp = state.specs.get(name)
+        if (sp) specs.push([name, { ...sp, codes: sp.codes ? new Set(sp.codes) : null }])
+      }
+      const snap = {
+        order, specs,
+        search: state.search, searchRegex: state.searchRegex, searchInvert: state.searchInvert,
+        query: queryInput.value, queryInvert: state.queryInvert,
+        sort: state.sort.map((x) => ({ ...x })),
+        marks: snapshotMarks(),
+      }
+      snap.sig = JSON.stringify([
+        order, specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? Array.from(sp.codes).sort((a, b) => a - b) : null }]),
+        snap.search, snap.searchRegex, snap.searchInvert, snap.query, snap.queryInvert, snap.sort, snap.marks.ver,
+      ])
+      return snap
+    }
+    const paintHistory = () => {
+      undoBtn.disabled = !history.past.length
+      redoBtn.disabled = !history.future.length
+      const key = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Ctrl+'
+      undoBtn.title = `Undo the last change to columns, filters, search, query, sort or marks (${key}Z)`
+      redoBtn.title = `Redo (${key}Shift+Z)`
+      undoBtn.setAttribute('aria-label', 'Undo')
+      redoBtn.setAttribute('aria-label', 'Redo')
+    }
+    const record = () => {
+      if (history.busy || !history.current) return
+      const snap = takeSnapshot()
+      if (snap.sig === history.current.sig) return
+      history.past.push(history.current)
+      if (history.past.length > HISTORY_MAX) history.past.shift()
+      history.current = snap
+      history.future = []
+      paintHistory()
+    }
+    const recordSoon = debounce(record, 400)
+    const restoreSnapshot = async (snap) => {
+      history.busy = true
+      try {
+        grid.closePop()
+        if (snap.marks.ver !== marksVer) {
+          const keep = new Set(snap.marks.cols.map((c) => c.name))
+          for (const name of Array.from(markers.keys())) {
+            if (!keep.has(name)) {
+              markers.delete(name)
+              picker.removeField(name)
+            }
+          }
+          for (const m of snap.marks.cols) {
+            const col = makeMarker(m.name, ds.n)
+            col.levels = m.levels.slice()
+            col.counts = new Array(col.levels.length).fill(0)
+            col.codes = m.codes.slice()
+            let nulls = 0
+            for (let i = 0; i < ds.n; i++) {
+              const c = col.codes[i]
+              if (c < 0) nulls++
+              else {
+                col.isNull[i] = 0
+                col.counts[c]++
+              }
+            }
+            col.nullCount = nulls
+            markers.set(m.name, col)
+            picker.addField(markerField(col), false)
+            picker.updateStats(col, true)
+          }
+          marksVer = snap.marks.ver
+          marksSnap = snap.marks
+          saveMarksSoon()
+        }
+        state.specs = new Map(snap.specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? new Set(sp.codes) : null }]))
+        state.sort = snap.sort.map((x) => ({ ...x }))
+        state.search = snap.search
+        searchInput.value = snap.search
+        state.searchRegex = snap.searchRegex
+        setPressed(searchRegexBtn, snap.searchRegex)
+        searchInput.placeholder = snap.searchRegex ? 'Regex across visible columns' : 'Search visible columns'
+        state.searchInvert = snap.searchInvert
+        setPressed(searchNotBtn, snap.searchInvert)
+        queryInput.value = snap.query
+        state.queryInvert = snap.queryInvert
+        setPressed(queryNotBtn, snap.queryInvert)
+        const order = snap.order.filter(hasCol)
+        picker.setSelected(order)
+        await setSelected(order)
+        runQuerySoon.cancel()
+        await runQuery()
+        for (const col of markers.values()) picker.setChart(col.name, chartFor(col))
+      } finally {
+        recordSoon.cancel()
+        history.busy = false
+      }
+    }
+    const stepHistory = async (back) => {
+      if (history.busy) return
+      recordSoon.cancel()
+      record()
+      const from = back ? history.past : history.future
+      const to = back ? history.future : history.past
+      if (!from.length) return
+      to.push(history.current)
+      history.current = from.pop()
+      paintHistory()
+      await restoreSnapshot(history.current)
+    }
+    api.undo = () => stepHistory(true)
+    api.redo = () => stepHistory(false)
+    undoBtn.addEventListener('click', api.undo)
+    redoBtn.addEventListener('click', api.redo)
+    const onUndoKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return
+      const k = e.key.toLowerCase()
+      if (k !== 'z' && k !== 'y') return
+      // Text boxes keep the browser's own undo for typing.
+      const t = e.target
+      // Act on keys pressed inside the viewer, or anywhere when it fills the page.
+      if (!(el.contains(t) || (standalone && (t === document.body || t === document.documentElement)))) return
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) && t.type !== 'checkbox') return
+      e.preventDefault()
+      stepHistory(!(k === 'y' || e.shiftKey))
+    }
+    document.addEventListener('keydown', onUndoKey)
+    paintHistory()
+
     const initial = x.columns == null
       ? ds.fields.slice(0, DEFAULT_VISIBLE).map((f) => f.name)
       : [].concat(x.columns)
@@ -1098,6 +1254,8 @@ export function mount(el, x) {
     await setSelected(picker.selected())
     for (const col of markers.values()) picker.setChart(col.name, chartFor(col))
     if (queryInput.value.trim()) await runQuery()
+    recordSoon.cancel()
+    history.current = takeSnapshot()
     timings.firstTable = performance.now() - t0
 
     // Decode the remaining columns in the background so their stats appear

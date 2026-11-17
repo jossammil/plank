@@ -72,6 +72,9 @@
 #'   syntax. The toolbar's **WHERE** switch shows or hides this bar, and
 #'   **See Query** shows the column filters, search and WHERE condition
 #'   combined as one condition, to copy or edit.
+#' * The undo and redo arrows step back and forward through changes to the
+#'   columns, filters, search, query, sort and marker columns, for example to
+#'   bring back a column (and its filter) that was unticked by mistake.
 #' * **Export** saves the filtered rows and shown columns as CSV, Excel
 #'   (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
 #'   or copies them to the clipboard as tab-separated text.

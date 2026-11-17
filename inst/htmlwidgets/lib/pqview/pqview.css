@@ -1550,3 +1550,11 @@ select.pqv-input {
 .pqv-export-msg:empty {
   display: none;
 }
+
+/* ---- undo / redo ----------------------------------------------------------- */
+
+.pqv-undo {
+  flex: none;
+  display: flex;
+  gap: 3px;
+}
