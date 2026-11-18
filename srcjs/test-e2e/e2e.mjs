@@ -81,7 +81,11 @@ const firstRow = async () => {
     g.scroller.scrollLeft = 0
     g.render()
   })
-  return page.locator('.pqv-row').first().locator('.pqv-cell').allInnerTexts()
+  // A row is drawn in two parts: the pinned part (row number and pinned
+  // columns) and the part that scrolls.
+  const pinned = await page.locator('.pqv-pinrows .pqv-row').first().locator('.pqv-cell').allInnerTexts()
+  const rest = await page.locator('.pqv-rows:not(.pqv-pinrows) .pqv-row').first().locator('.pqv-cell').allInnerTexts()
+  return pinned.concat(rest)
 }
 const option = async (colName, value) => {
   await hcell(colName).locator('.pqv-opt').click()
@@ -99,7 +103,7 @@ check('status shows all rows', await page.locator('.pqv-status').innerText(), '1
 check('columns listed in picker', await page.locator('.pqv-pitem').count(), 30)
 check('columns shown by default', await page.locator('.pqv-hcell[data-name]').count(), 10)
 check('no view is current at the start', await page.locator('.pqv-toolbar .pqv-viewsbtn').innerText(), 'Views')
-check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-row').count()) < 80, true)
+check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-pinrows .pqv-row').count()) < 80, true)
 
 // ---- standalone top offset ------------------------------------------------
 const toolbarTop = await page.locator('.pqv-toolbar').evaluate((e) => e.getBoundingClientRect().top)
@@ -869,6 +873,120 @@ await page.evaluate(async (cols) => {
 }, defaultCols)
 await settle()
 
+// ---- row panel -------------------------------------------------------------------
+const dpanel = page.locator('.pqv-detail')
+const dvalue = (name) => dpanel.locator('.pqv-detail-item').filter({ has: page.locator('.pqv-detail-cname', { hasText: new RegExp(`^${name}$`) }) }).locator('.pqv-detail-value').innerText()
+const rowNum = (k) => page.locator('.pqv-pinrows .pqv-row').nth(k).locator('.pqv-rownum')
+await page.evaluate(async () => {
+  const p = document.querySelector('.pqv').pqview
+  p.state.sort = []
+  p.grid.setSort([])
+  await p.runQuery()
+  p.grid.scroller.scrollTop = 0
+  p.grid.scroller.scrollLeft = 0
+  p.grid.render()
+})
+check('row panel closed at first', await dpanel.isVisible(), false)
+await rowNum(0).click()
+await settle()
+check('clicking a row number opens the row panel', await dpanel.isVisible(), true)
+check('row panel title', await dpanel.locator('.pqv-detail-title').innerText(), 'Row 1')
+check('row panel place in the rows', await dpanel.locator('.pqv-detail-where').innerText(), '1 of 100,000 shown')
+check('row panel value', await dvalue('record_id'), 'R000001')
+await page.waitForTimeout(400)
+check('row panel reads columns not in the table', /^\d/.test(await dvalue('measure_01')), true)
+check('row panel: every column listed', await dpanel.locator('.pqv-detail-item').count(), 30)
+check('the row is highlighted in the table', await page.locator('.pqv-pinrows .pqv-row.pqv-current .pqv-rownum').innerText(), '1')
+await dpanel.locator('button[aria-label="Next row"]').click()
+check('next row', await dpanel.locator('.pqv-detail-title').innerText(), 'Row 2')
+await page.keyboard.press('ArrowDown')
+check('down key steps to the next row', await dpanel.locator('.pqv-detail-title').innerText(), 'Row 3')
+await page.keyboard.press('ArrowUp')
+check('up key steps back', await dvalue('record_id'), 'R000002')
+await dpanel.locator('input[aria-label="Find column in this row"]').fill('measure')
+check('find a column in the row panel', await dpanel.locator('.pqv-detail-item:visible').count(), 10)
+await dpanel.locator('input[aria-label="Find column in this row"]').fill('')
+const fullIncome = await page.evaluate(() => {
+  const p = document.querySelector('.pqv').pqview
+  return String(p.ds.peek('score').num[1])
+})
+check('row panel shows full precision', await dvalue('score'), fullIncome)
+if (engine === 'chromium') {
+  await dpanel.locator('.pqv-btn', { hasText: 'Copy' }).click()
+  await page.waitForTimeout(300)
+  const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
+  check('row copied as name and value lines', clip.split(/\r?\n/)[0], 'record_id\tR000002')
+  check('row copy has every column', clip.trimEnd().split(/\r?\n/).length, 30)
+}
+await query("region = 'West'")
+check('row panel: row filtered out', await dpanel.locator('.pqv-detail-where').innerText(), 'Not in the filtered rows')
+check('row panel: no next row outside the filter', await dpanel.locator('button[aria-label="Next row"]').isDisabled(), true)
+await page.locator('.pqv-rows .pqv-row').first().locator('.pqv-cell').first().click()
+await settle()
+check('while open, clicking a row shows it', await dvalue('region'), 'West')
+check('row panel follows the filtered rows', await dpanel.locator('.pqv-detail-where').innerText(), `1 of ${expected.region_exact_west.toLocaleString('en-US')} shown`)
+await page.keyboard.press('Escape')
+check('Escape closes the row panel', await dpanel.isVisible(), false)
+check('no row highlighted after closing', await page.locator('.pqv-row.pqv-current').count(), 0)
+await rowNum(0).click()
+await rowNum(0).click()
+check('clicking the same row number again closes it', await dpanel.isVisible(), false)
+await clear()
+
+// ---- pinned columns ----------------------------------------------------------------
+const pinBtn = (name) => hcell(name).locator('.pqv-pinbtn')
+const sortBy = async (name) => {
+  await hcell(name).locator('.pqv-hname').click()
+  await settle()
+}
+const pinOrder = await headNames()
+await hcell('income').hover()
+await pinBtn('income').click()
+await settle()
+let order2 = await headNames()
+check('pinning moves the column to the left', order2[0], 'income')
+check('pinned column marked', await hcell('income').evaluate((e) => e.classList.contains('pqv-hpin')), true)
+await hcell('comment').hover()
+await pinBtn('comment').click()
+await settle()
+order2 = await headNames()
+check('second pinned column follows the first', order2.slice(0, 2).join('|'), 'income|comment')
+check('picker follows the table order', (await pickNames('.pqv-psel')).slice(0, 2).join('|'), 'income|comment')
+const pinX = await hcell('comment').evaluate((e) => e.getBoundingClientRect().left)
+await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollLeft = 600; g.render() })
+await settle()
+check('pinned header stays put when scrolling sideways', Math.abs(await hcell('comment').evaluate((e) => e.getBoundingClientRect().left) - pinX) < 1, true)
+const pinCellX = await page.locator('.pqv-pinrows .pqv-row').first().locator('.pqv-cell').nth(2).evaluate((e) => e.getBoundingClientRect().left)
+check('pinned cells stay under their header', Math.abs(pinCellX - pinX) < 1, true)
+check('pinned layer shows the right values', await page.locator('.pqv-pinrows .pqv-row').first().locator('.pqv-cell').nth(0).innerText(), '1')
+check('scrolled columns are drawn too', await page.locator('.pqv-rows:not(.pqv-pinrows) .pqv-row').first().locator('.pqv-cell').count() > 0, true)
+await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollLeft = 0; g.render() })
+await sortBy('income')
+check('sorting a pinned column', (await firstRow())[1], String(+(await page.evaluate(() => Math.min(...document.querySelector('.pqv').pqview.ds.peek('income').num.filter((v) => v === v)))).toPrecision(7)))
+await sortBy('income')
+await sortBy('income')
+await step()
+await hcell('income').hover()
+await pinBtn('income').click()
+await settle()
+order2 = await headNames()
+check('unpinned column goes after the pinned ones', order2.slice(0, 2).join('|'), 'comment|income')
+await step()
+await undoBtn.click()
+await settle()
+check('undo pins it again', (await headNames()).slice(0, 2).join('|'), 'income|comment')
+check('undo restores the pin marks', await hcell('income').evaluate((e) => e.classList.contains('pqv-hpin')), true)
+check('R code includes pinned columns', /pin = c\("income", "comment"\)/.test(await page.evaluate(() => document.querySelector('.pqv').pqview.views.rCode())), true)
+await page.evaluate(() => { const p = document.querySelector('.pqv').pqview; p.togglePin('income'); p.togglePin('comment') })
+await settle()
+await page.evaluate(async (cols) => {
+  const p = document.querySelector('.pqv').pqview
+  p.picker.setSelected(cols)
+  p.picker.emit()
+}, pinOrder)
+await settle()
+check('no pinned columns left', await page.locator('.pqv-hcell.pqv-hpin[data-name]').count(), 0)
+
 // ---- theme and mono switches persist across reloads ------------------------
 const themeBtn = page.locator('.pqv-switches .pqv-icon')
 await themeBtn.click() // auto -> light
@@ -914,7 +1032,7 @@ const scroll = await page.evaluate(() => {
   times.sort((a, b) => a - b)
   g.scroller.scrollTop = max
   g.render()
-  const lastRow = g.rowsEl.lastChild.firstChild.textContent
+  const lastRow = g.pinEl.lastChild.firstChild.textContent
   g.scroller.scrollTop = 0
   return { median: +times[100].toFixed(2), p95: +times[190].toFixed(2), lastRow }
 })
@@ -925,19 +1043,22 @@ check('scrolling reaches the last row', scroll.lastRow, '100000')
 const remount = await page.evaluate(async () => {
   const el = document.querySelector('.pqv')
   const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
-  const api = window.PQView.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'] })
+  const api = window.PQView.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'], pin: ['comment'] })
   await api.ready
   await new Promise((resolve) => setTimeout(resolve, 500))
   return {
     open: !el.querySelector('.pqv-counts').hidden,
     groups: api.counts.result ? api.counts.result.groups.length : null,
     sort: api.state.sort.map((s) => s.name + ' ' + s.dir).join(),
+    pinned: api.state.pinned.join(),
+    first: api.state.cols[0].name,
   }
 })
 check('sort from R applied at start', remount.sort, 'income desc')
+check('pin from R applied at start', remount.pinned + ' ' + remount.first, 'comment comment')
 check('counts from R open the panel', remount.open, true)
 check('counts from R: one row per region', remount.groups, 4)
-check('first row is the largest income', (await firstRow())[5], String(+expected.top_income.toPrecision(7)))
+check('first row is the largest income', (await firstRow())[6], String(+expected.top_income.toPrecision(7)))
 
 // ---- narrow screen --------------------------------------------------------
 const narrow = await browser.newContext({ viewport: { width: 420, height: 800 } })

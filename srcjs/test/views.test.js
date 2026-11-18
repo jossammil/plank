@@ -107,3 +107,13 @@ test('R code for a view', () => {
   const bare = viewToR(makeView('', state({ columns: [], sort: [] })), '')
   assert.equal(bare, 'pqview_view(\n  columns = character(0)\n)')
 })
+
+test('pinned columns are part of a view', () => {
+  const v = makeView('p', state({ pinned: ['region', 'gone'] }))
+  assert.deepEqual(v.pinned, ['region'])
+  assert.notEqual(viewSignature(v), viewSignature(makeView('p', state())))
+  assert.match(describeView(v), /1 pinned/)
+  assert.match(viewToR(v, ''), /pin = "region"/)
+  assert.deepEqual(normalizeView({ name: 'x', pinned: 'a' }).pinned, ['a'])
+  assert.deepEqual(parseSaved(serializeSaved([v]))[0].pinned, ['region'])
+})

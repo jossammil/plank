@@ -12,6 +12,7 @@ pqview(
   digits = 7,
   where = NULL,
   sort = NULL,
+  pin = NULL,
   counts = NULL,
   views = NULL,
   theme = c("auto", "light", "dark"),
@@ -49,6 +50,10 @@ browser, which shows any syntax error.}
 \item{sort}{Optional columns to sort by at first, in order of priority.
 Prefix a name with \code{-} for descending order, as in
 \code{c("region", "-income")}. The columns must be among those shown.}
+
+\item{pin}{Optional columns to pin at first: they move to the left of the
+table and stay in view when scrolling sideways. They must be among those
+shown. Readers pin and unpin with the pin button in each header.}
 
 \item{counts}{Optional one or two column names: the \strong{Counts} panel opens
 with the filtered rows counted by these columns.}
@@ -135,6 +140,14 @@ and Counts settings under a name, in the reader's browser, and switches
 between saved views. Views passed from R with \code{views} are listed too,
 and \strong{Copy as R code} writes \code{\link[=pqview_view]{pqview_view()}} code for the current
 state.
+\item Click a row number to open the row panel at the right: every column of
+that row, shown or not, at full precision, with a box to find a column.
+While it is open, clicking any row shows that row; the arrow buttons (or
+the Up and Down keys) step through the filtered rows, and \strong{Copy} copies
+the row as name and value lines.
+\item The pin button in a header (shown on hover) pins the column: pinned
+columns move to the left and stay in view, with the row numbers, when
+scrolling sideways.
 \item \strong{Mark} adds a marker column and sets a value on every filtered row;
 clicking a marker cell sets one row. Marker columns can be filtered,
 sorted and queried, are saved in the reader's browser, and are included

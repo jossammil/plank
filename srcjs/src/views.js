@@ -1,5 +1,5 @@
-// Saved views: named states of the table (columns and their order, column
-// filters, search, WHERE query, sort and the Counts panel) that can be
+// Saved views: named states of the table (columns and their order, pinned
+// columns, column filters, search, WHERE query, sort and the Counts panel) that can be
 // switched between. Views are kept per data set in the browser, and a
 // report's author can add views from R (see pqview_view()).
 
@@ -45,7 +45,7 @@ export function specFromView(stored, col, emptySpec) {
 /**
  * Builds a view from the viewer's state.
  * @param {object} s { columns, specs: [name, spec][], colOf(name), search, searchRegex,
- *   searchInvert, where, whereInvert, sort: {name, dir}[], counts }
+ *   searchInvert, where, whereInvert, sort: {name, dir}[], pinned: string[], counts }
  */
 export function makeView(name, s) {
   const filters = []
@@ -63,6 +63,7 @@ export function makeView(name, s) {
     where: (s.where || '').trim(),
     whereInvert: !!s.whereInvert,
     sort: s.sort.map((x) => ({ name: x.name, dir: x.dir === 'desc' ? 'desc' : 'asc' })),
+    pinned: (s.pinned || []).filter((name) => s.columns.includes(name)),
     counts: s.counts ? cleanCounts(s.counts) : null,
   }
 }
@@ -100,6 +101,7 @@ export function normalizeView(raw) {
     where: typeof raw.where === 'string' ? raw.where.trim() : '',
     whereInvert: !!raw.whereInvert,
     sort,
+    pinned: strings(raw.pinned),
     counts: raw.counts == null ? null : cleanCounts(Array.isArray(raw.counts) || typeof raw.counts === 'string'
       ? { by: strings(raw.counts) } : raw.counts),
   }
@@ -113,6 +115,7 @@ export function viewSignature(v) {
   return JSON.stringify([
     v.columns, v.filters.map(([n, s]) => [n, SPEC_KEYS.map((k) => s[k]), s.values]),
     v.search, v.searchRegex, v.searchInvert, v.where, v.whereInvert, v.sort.map((x) => [x.name, x.dir]),
+    v.pinned || [],
   ])
 }
 
@@ -149,6 +152,7 @@ export function describeView(v) {
   if (nf) parts.push(`${nf} filter${nf === 1 ? '' : 's'}`)
   if (v.search.trim()) parts.push('search')
   if (v.where) parts.push('WHERE')
+  if (v.pinned && v.pinned.length) parts.push(`${v.pinned.length} pinned`)
   if (v.sort.length) parts.push('sorted by ' + v.sort.map((s) => s.name + (s.dir === 'desc' ? ' ↓' : '')).join(', '))
   if (v.counts) parts.push('counts by ' + v.counts.by.join(' × '))
   return parts.join(' · ') || 'no filters'
@@ -169,6 +173,7 @@ export function viewToR(v, where, name = '') {
   const args = []
   args.push(`columns = ${v.columns.length ? rVector(v.columns) : 'character(0)'}`)
   if (where) args.push(`where = ${rString(where)}`)
+  if (v.pinned && v.pinned.length) args.push(`pin = ${rVector(v.pinned)}`)
   if (v.sort.length) args.push(`sort = ${rVector(v.sort.map((s) => (s.dir === 'desc' ? '-' : '') + s.name))}`)
   if (v.counts) args.push(`counts = ${rVector(v.counts.by)}`)
   const code = `pqview_view(\n  ${args.join(',\n  ')}\n)`

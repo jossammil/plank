@@ -23,6 +23,9 @@
 #' @param where Optional initial WHERE condition for the query bar, such as
 #'   `"age > 30 AND region IN ('West', 'South')"`. It is checked in the
 #'   browser, which shows any syntax error.
+#' @param pin Optional columns to pin at first: they move to the left of the
+#'   table and stay in view when scrolling sideways. They must be among those
+#'   shown. Readers pin and unpin with the pin button in each header.
 #' @param sort Optional columns to sort by at first, in order of priority.
 #'   Prefix a name with `-` for descending order, as in
 #'   `c("region", "-income")`. The columns must be among those shown.
@@ -87,6 +90,14 @@
 #'   between saved views. Views passed from R with `views` are listed too,
 #'   and **Copy as R code** writes [pqview_view()] code for the current
 #'   state.
+#' * Click a row number to open the row panel at the right: every column of
+#'   that row, shown or not, at full precision, with a box to find a column.
+#'   While it is open, clicking any row shows that row; the arrow buttons (or
+#'   the Up and Down keys) step through the filtered rows, and **Copy** copies
+#'   the row as name and value lines.
+#' * The pin button in a header (shown on hover) pins the column: pinned
+#'   columns move to the left and stay in view, with the row numbers, when
+#'   scrolling sideways.
 #' * **Mark** adds a marker column and sets a value on every filtered row;
 #'   clicking a marker cell sets one row. Marker columns can be filtered,
 #'   sorted and queried, are saved in the reader's browser, and are included
@@ -123,6 +134,7 @@ pqview <- function(data,
                    digits = 7,
                    where = NULL,
                    sort = NULL,
+                   pin = NULL,
                    counts = NULL,
                    views = NULL,
                    theme = c("auto", "light", "dark"),
@@ -147,6 +159,7 @@ pqview <- function(data,
   )
 
   check_names_arg(sort, "sort")
+  check_names_arg(pin, "pin")
   check_names_arg(counts, "counts")
   if (!is.null(counts) && !length(counts) %in% 1:2) {
     stop("`counts` takes one or two column names.", call. = FALSE)
@@ -155,6 +168,7 @@ pqview <- function(data,
   enc <- encode_data(data, rownames = rownames, compression = compression)
   shown <- if (is.null(columns)) utils::head(enc$names, 10L) else columns
   sort <- browser_sort(sort, enc$names, shown)
+  pin <- browser_pin(pin, enc$names, shown)
   if (!is.null(counts)) check_known(counts, enc$names, "counts")
   views <- browser_views(views, enc$names, shown)
   if (length(enc$bytes) > max_bytes) {
@@ -182,6 +196,7 @@ pqview <- function(data,
   if (length(notes)) x$notes <- paste(notes, collapse = "\n")
   if (!is.null(where) && nzchar(trimws(where))) x$where <- where
   if (length(sort)) x$sort <- sort
+  if (length(pin)) x$pin <- pin
   if (!is.null(counts)) x$counts <- as.list(counts)
   if (length(views)) x$views <- views
 

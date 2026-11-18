@@ -1,6 +1,6 @@
 Package: pqview
 Title: Fast, Serverless Data Frame Viewer in a Single HTML File
-Version: 0.8.0
+Version: 0.9.0
 Authors@R: c(
     person("Joseph", "Miller", role = c("aut", "cre"), email = "jossammil@gmail.com"),
     person("Hyperparam", role = c("ctb", "cph"),
@@ -12,8 +12,9 @@ Description: Browse a data frame or parquet file in the browser without a
     server. The data is embedded as compressed parquet inside one HTML file
     and read client-side, with a column picker, per-column filters (including
     regular expressions and inverted "everything but" filters), a SQL WHERE
-    query bar, sorting, global search, summary statistics, grouped counts,
-    saved views and export to CSV, Excel, R data and parquet.
+    query bar, sorting, pinned columns, a row detail panel, global search,
+    summary statistics, grouped counts, saved views and export to CSV,
+    Excel, R data and parquet.
 License: MIT + file LICENSE
 URL: https://github.com/jossammil/pqview
 BugReports: https://github.com/jossammil/pqview/issues

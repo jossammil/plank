@@ -23,6 +23,8 @@ const MODE_TITLE = {
 }
 const FUNNEL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false">'
   + '<path d="M2 3h12l-4.6 5.4V13l-2.8 1.2V8.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>'
+const PIN_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">'
+  + '<path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
 const OPT_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
   + '<path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h8M14 12h0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
   + '<circle cx="11" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/>'
@@ -54,6 +56,8 @@ export class Grid {
    * @param {(name: string, debounced: boolean) => void} opts.onFilter
    * @param {(name: string, additive: boolean) => void} opts.onSort
    * @param {(col: object, row: number, cell: HTMLElement) => void} [opts.onMarkCell] click on a marker cell
+   * @param {(row: number, onNumber: boolean) => void} [opts.onRowClick] click on a row (onNumber: on its row number)
+   * @param {(name: string) => void} [opts.onPin] pin or unpin a column
    */
   constructor(host, opts) {
     this.opts = opts
@@ -64,6 +68,9 @@ export class Grid {
     this.lefts = [0]
     this.layoutVersion = 0
     this.pool = []
+    this.pinCount = 0
+    this.current = -1
+    this.hoverRow = null
     this.cellKey = ''
     this.raf = 0
     this.pop = null
@@ -72,7 +79,10 @@ export class Grid {
 
     this.head = h('div', { class: 'pqv-head', role: 'row' })
     this.rowsEl = h('div', { class: 'pqv-rows' })
-    this.canvas = h('div', { class: 'pqv-canvas' }, this.rowsEl)
+    // The row numbers and pinned columns: drawn on a layer that stays at the
+    // left edge while the rest scrolls sideways.
+    this.pinEl = h('div', { class: 'pqv-rows pqv-pinrows' })
+    this.canvas = h('div', { class: 'pqv-canvas' }, this.rowsEl, this.pinEl)
     this.scroller = h('div', { class: 'pqv-scroller', tabindex: '0', role: 'grid' }, this.head, this.canvas)
     this.empty = h('div', { class: 'pqv-empty' })
     host.append(this.scroller, this.empty)
@@ -82,18 +92,31 @@ export class Grid {
       if (this.pop && this.pop.cell) this.closePop()
       this.schedule()
     }, { passive: true })
-    this.rowsEl.addEventListener('click', (e) => {
-      const cell = e.target.closest && e.target.closest('.pqv-markcell')
-      if (!cell || !this.opts.onMarkCell || cell._row === undefined) return
-      if (this.pop && this.pop.anchor === cell) this.closePop()
-      else this.opts.onMarkCell(cell._col, cell._row, cell)
+    this.canvas.addEventListener('click', (e) => {
+      if (!e.target.closest) return
+      const cell = e.target.closest('.pqv-markcell')
+      if (cell && this.opts.onMarkCell && cell._row !== undefined) {
+        if (this.pop && this.pop.anchor === cell) this.closePop()
+        else this.opts.onMarkCell(cell._col, cell._row, cell)
+        return
+      }
+      const row = e.target.closest('.pqv-row')
+      if (!row || row._i === undefined || !this.opts.onRowClick) return
+      // Leave text selection alone.
+      const sel = window.getSelection && window.getSelection()
+      if (sel && !sel.isCollapsed && String(sel).trim()) return
+      this.opts.onRowClick(row._i, !!e.target.closest('.pqv-rownum'))
     })
-    this.rowsEl.addEventListener('mouseover', (e) => {
+    this.canvas.addEventListener('mouseover', (e) => {
       const cell = e.target.closest && e.target.closest('.pqv-cell')
       if (!cell) return
       if (cell.scrollWidth > cell.clientWidth) cell.title = cell.textContent
       else cell.removeAttribute('title')
+      // A row is drawn in two parts (pinned and scrolling): light up both.
+      const row = this.pool[cell.parentNode._r]
+      if (row !== this.hoverRow) this.setHover(row)
     })
+    this.canvas.addEventListener('mouseleave', () => this.setHover(null))
     if (typeof ResizeObserver !== 'undefined') {
       this.ro = new ResizeObserver(() => this.schedule())
       this.ro.observe(this.scroller)
@@ -121,9 +144,14 @@ export class Grid {
 
   // ---- public API -------------------------------------------------------
 
-  setColumns(cols) {
+  /**
+   * @param {object[]} cols columns in display order
+   * @param {number} [pinCount] how many of the first columns stay in view when scrolling sideways
+   */
+  setColumns(cols, pinCount = 0) {
     this.closePop()
     this.cols = cols
+    this.pinCount = Math.min(pinCount, cols.length)
     for (const col of cols) {
       if (!this.widths.has(col.name)) this.widths.set(col.name, this.autoWidth(col))
     }
@@ -142,6 +170,41 @@ export class Grid {
   setSort(sort) {
     this.sort = sort
     this.updateSortIcons()
+  }
+
+  /** Highlight the row shown in the detail panel (-1 for none). */
+  setCurrent(i) {
+    this.current = i
+    this.schedule()
+  }
+
+  /** Scroll just enough to show the row at view position `pos`. */
+  scrollToRow(pos) {
+    const sc = this.scroller
+    const viewH = Math.max(ROW_H, sc.clientHeight - this.head.offsetHeight)
+    const total = this.view.length * ROW_H
+    const virt = Math.min(total, MAX_SCROLL_H)
+    const scaled = total > virt && virt > viewH
+    const top = scaled ? (sc.scrollTop / (virt - viewH)) * (total - viewH) : sc.scrollTop
+    const y = pos * ROW_H
+    let want
+    if (y < top) want = y
+    else if (y + ROW_H > top + viewH) want = y + ROW_H - viewH
+    else return
+    sc.scrollTop = scaled ? (want / (total - viewH)) * (virt - viewH) : want
+    this.schedule()
+  }
+
+  setHover(row) {
+    if (this.hoverRow) {
+      this.hoverRow.el.classList.remove('pqv-hover')
+      this.hoverRow.pel.classList.remove('pqv-hover')
+    }
+    this.hoverRow = row || null
+    if (row) {
+      row.el.classList.add('pqv-hover')
+      row.pel.classList.add('pqv-hover')
+    }
   }
 
   schedule() {
@@ -178,7 +241,7 @@ export class Grid {
   remeasure() {
     this.ctx = null
     this.widths.clear()
-    this.setColumns(this.cols)
+    this.setColumns(this.cols, this.pinCount)
   }
 
   layout() {
@@ -189,7 +252,16 @@ export class Grid {
     this.head.style.width = total + 'px'
     this.canvas.style.width = total + 'px'
     const cells = this.head.children
-    for (let c = 0; c < cells.length; c++) cells[c].style.width = lefts[c + 1] - lefts[c] + 'px'
+    const pins = this.pinCount
+    for (let c = 0; c < cells.length; c++) {
+      const cell = cells[c]
+      cell.style.width = lefts[c + 1] - lefts[c] + 'px'
+      // Pinned header cells stick to the left edge like their rows.
+      const pinned = c <= pins
+      cell.classList.toggle('pqv-hpin', pinned)
+      cell.classList.toggle('pqv-hpin-last', c === pins)
+      cell.style.left = pinned ? lefts[c] + 'px' : ''
+    }
     this.layoutVersion++
   }
 
@@ -244,6 +316,17 @@ export class Grid {
       refresh()
       this.opts.onFilter(col.name, false)
     })
+    const pinBtn = h('button', { class: 'pqv-pinbtn', type: 'button' })
+    pinBtn.innerHTML = PIN_ICON
+    pinBtn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      if (this.opts.onPin) this.opts.onPin(col.name)
+    })
+    const pinned = this.cols.indexOf(col) < this.pinCount
+    pinBtn.classList.toggle('pqv-on', pinned)
+    pinBtn.title = pinned ? 'Unpin this column' : 'Pin this column: keep it at the left while scrolling sideways'
+    pinBtn.setAttribute('aria-label', `${pinned ? 'Unpin' : 'Pin'} ${col.name}`)
+    pinBtn.setAttribute('aria-pressed', String(pinned))
     const refresh = () => {
       controls.refresh()
       const has = hasFilter(col, spec)
@@ -262,8 +345,8 @@ export class Grid {
       for (const b of list) badges.append(h('span', { class: 'pqv-badge', text: b.text, title: b.title }))
       opt.classList.toggle('pqv-on', hasOptions(spec))
       // Widen the column if its name and badges no longer fit.
-      if ((list.length || has) && badges.isConnected) {
-        const need = Math.ceil(this.measure(col.name) * 1.08 + 40 + badges.offsetWidth + (has ? 20 : 0))
+      if ((list.length || has || pinned) && badges.isConnected) {
+        const need = Math.ceil(this.measure(col.name) * 1.08 + 40 + badges.offsetWidth + (has ? 20 : 0) + (pinned ? 18 : 0))
         if (need > this.widths.get(col.name)) {
           this.widths.set(col.name, Math.min(need, MAX_AUTO_W + 120))
           this.layout()
@@ -278,7 +361,7 @@ export class Grid {
     let cell = null
     this.refreshers.set(col.name, refresh)
     cell = h('div', { class: col.marker ? 'pqv-hcell pqv-hmarker' : 'pqv-hcell', role: 'columnheader' },
-      h('div', { class: 'pqv-hnamerow' }, fbtn, nameBtn),
+      h('div', { class: 'pqv-hnamerow' }, fbtn, nameBtn, pinBtn),
       h('div', { class: 'pqv-hfilter' }, controls.nodes, opt),
       resizer)
     cell.dataset.name = col.name
@@ -597,9 +680,19 @@ export class Grid {
 
   // ---- body -------------------------------------------------------------
 
-  makeRow(c0, c1) {
+  /** One pooled row: the pinned part (row number and pinned columns) and the scrolling part. */
+  makeRow(c0, c1, r) {
     const el = h('div', { class: 'pqv-row' })
+    const pel = h('div', { class: 'pqv-row' })
+    el._r = r
+    pel._r = r
     const cells = []
+    this.makeCells(pel, 0, this.pinCount, cells)
+    this.makeCells(el, c0, c1, cells)
+    return { el, pel, cells, alt: false, cur: false }
+  }
+
+  makeCells(el, c0, c1, cells) {
     for (let c = c0; c <= c1; c++) {
       const col = c === 0 ? null : this.cols[c - 1]
       let cls = 'pqv-cell'
@@ -614,7 +707,6 @@ export class Grid {
       if (col && col.marker) cell._col = col
       cells.push({ cell, text, col, na: false, mark: !!(col && col.marker) })
     }
-    return { el, cells, alt: false }
   }
 
   render() {
@@ -648,34 +740,54 @@ export class Grid {
     const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
     const last = cols.length ? Math.min(n, Math.ceil((top + viewH) / ROW_H) + OVERSCAN) : 0
 
-    // visible column window (layout column 0 is the row number)
+    // Visible column window. Layout column 0 is the row number; it and the
+    // pinned columns (1..pinCount) are drawn on the pinned layer.
     const x0 = scroller.scrollLeft
     const x1 = x0 + scroller.clientWidth
     const ncol = lefts.length - 1
-    let c0 = 0
-    while (c0 < ncol - 1 && lefts[c0 + 1] <= x0) c0++
-    let c1 = c0
-    while (c1 < ncol - 1 && lefts[c1 + 1] < x1) c1++
-    c0 = Math.max(0, c0 - 1)
-    c1 = Math.min(ncol - 1, c1 + 1)
+    const P = this.pinCount + 1
+    const pinW = lefts[P]
+    let c0 = ncol
+    let c1 = ncol - 1
+    if (P < ncol) {
+      c0 = P
+      while (c0 < ncol - 1 && lefts[c0 + 1] <= x0 + pinW) c0++
+      c1 = c0
+      while (c1 < ncol - 1 && lefts[c1 + 1] < x1) c1++
+      c0 = Math.max(P, c0 - 1)
+      c1 = Math.min(ncol - 1, c1 + 1)
+    }
 
     const key = `${c0}:${c1}:${this.layoutVersion}`
     if (key !== this.cellKey) {
       this.rowsEl.textContent = ''
+      this.pinEl.textContent = ''
       this.pool = []
+      this.hoverRow = null
       this.cellKey = key
-      this.rowsEl.style.width = lefts[c1 + 1] - lefts[c0] + 'px'
+      this.rowsEl.style.width = Math.max(0, lefts[c1 + 1] - lefts[c0]) + 'px'
+      this.pinEl.style.width = pinW + 'px'
     }
-    this.rowsEl.style.transform = `translate(${lefts[c0]}px, ${st - (top - first * ROW_H)}px)`
+    const y = st - (top - first * ROW_H)
+    this.rowsEl.style.transform = `translate(${lefts[c0]}px, ${y}px)`
+    this.pinEl.style.transform = `translate(${x0}px, ${y}px)`
+    this.pinEl.classList.toggle('pqv-pinshadow', x0 > 0)
+    this.head.classList.toggle('pqv-pinshadow', x0 > 0)
 
     const want = Math.max(0, last - first)
     const pool = this.pool
     while (pool.length < want) {
-      const row = this.makeRow(c0, c1)
+      const row = this.makeRow(c0, c1, pool.length)
       pool.push(row)
       this.rowsEl.append(row.el)
+      this.pinEl.append(row.pel)
     }
-    while (pool.length > want) pool.pop().el.remove()
+    while (pool.length > want) {
+      const row = pool.pop()
+      if (row === this.hoverRow) this.hoverRow = null
+      row.el.remove()
+      row.pel.remove()
+    }
 
     for (let r = 0; r < want; r++) {
       const row = pool[r]
@@ -684,8 +796,17 @@ export class Grid {
       const alt = (ri & 1) === 1
       if (row.alt !== alt) {
         row.el.classList.toggle('pqv-alt', alt)
+        row.pel.classList.toggle('pqv-alt', alt)
         row.alt = alt
       }
+      const cur = i === this.current
+      if (row.cur !== cur) {
+        row.el.classList.toggle('pqv-current', cur)
+        row.pel.classList.toggle('pqv-current', cur)
+        row.cur = cur
+      }
+      row.el._i = i
+      row.pel._i = i
       const cells = row.cells
       for (let k = 0; k < cells.length; k++) {
         const c = cells[k]

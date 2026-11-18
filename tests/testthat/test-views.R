@@ -76,3 +76,15 @@ test_that("column names come from parquet files too", {
   expect_identical(w$x$sort, list(list(name = "disp", dir = "desc")))
   expect_error(pqview(path, counts = "hp"), "Unknown column")
 })
+
+test_that("pinned columns reach the browser and are checked", {
+  w <- pqview(mtcars, pin = c("mpg", "cyl"))
+  expect_identical(w$x$pin, list("mpg", "cyl"))
+  expect_null(pqview(mtcars)$x$pin)
+  expect_error(pqview(mtcars, pin = "nope"), "Unknown column in `pin`")
+  expect_error(pqview(mtcars, pin = "carb"), "`pin` must be shown")
+  v <- pqview(mtcars, views = list(a = pqview_view(columns = c("hp", "wt"), pin = "wt")))$x$views
+  expect_identical(v[[1]]$pinned, list("wt"))
+  expect_error(pqview(mtcars, views = list(a = pqview_view(columns = "hp", pin = "wt"))), "view 'a' `pin` must be shown")
+  expect_output(print(pqview_view(pin = "x")), "pin      x")
+})

@@ -95,3 +95,14 @@ test('columns with no values take their type from the file', async () => {
   assert.equal(tag(build('x', [null], {})), 'chr')
   assert.equal(build('x', [null, null], { base: 'number' }).nullCount, 2)
 })
+
+test('the row panel shows numbers at full precision', async () => {
+  const { detailText } = await import('../src/detail.js')
+  const col = buildColumn('x', [1 / 3, null, Infinity, 12])
+  assert.equal(detailText(col, 0), String(1 / 3))
+  assert.equal(detailText(col, 1), null)
+  assert.equal(detailText(col, 2), 'Inf')
+  assert.equal(detailText(col, 3), '12')
+  const day = buildColumn('d', [Date.UTC(2024, 1, 3)], { kind: 'date' })
+  assert.equal(detailText(day, 0), '2024-02-03')
+})

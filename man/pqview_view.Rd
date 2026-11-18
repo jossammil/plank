@@ -4,7 +4,13 @@
 \alias{pqview_view}
 \title{Define a view for the viewer's Views menu}
 \usage{
-pqview_view(columns = NULL, where = NULL, sort = NULL, counts = NULL)
+pqview_view(
+  columns = NULL,
+  where = NULL,
+  sort = NULL,
+  counts = NULL,
+  pin = NULL
+)
 }
 \arguments{
 \item{columns}{Names of the columns shown, in order. \code{NULL} shows the same
@@ -22,14 +28,18 @@ columns must be among those shown.}
 \item{counts}{One or two column names to count rows by in the \strong{Counts}
 panel, which opens when the view is used. \code{NULL} leaves the panel as it
 is.}
+
+\item{pin}{Columns to pin: they move to the left of the table and stay in
+view when scrolling sideways. They must be among those shown.}
 }
 \value{
 A \code{pqview_view} object.
 }
 \description{
 A view is a named state of the table that readers can switch to from the
-\strong{Views} menu: which columns are shown and in what order, which rows are
-kept, how they are sorted, and optionally the \strong{Counts} panel. Pass a
+\strong{Views} menu: which columns are shown and in what order, which are
+pinned, which rows are kept, how they are sorted, and optionally the
+\strong{Counts} panel. Pass a
 named list of views to \code{\link[=pqview]{pqview()}}'s \code{views} argument.
 }
 \details{

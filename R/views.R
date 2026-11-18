@@ -1,8 +1,9 @@
 #' Define a view for the viewer's Views menu
 #'
 #' A view is a named state of the table that readers can switch to from the
-#' **Views** menu: which columns are shown and in what order, which rows are
-#' kept, how they are sorted, and optionally the **Counts** panel. Pass a
+#' **Views** menu: which columns are shown and in what order, which are
+#' pinned, which rows are kept, how they are sorted, and optionally the
+#' **Counts** panel. Pass a
 #' named list of views to [pqview()]'s `views` argument.
 #'
 #' In the viewer, **Views** > **Copy as R code** writes this call for the
@@ -14,6 +15,8 @@
 #' @param where A WHERE condition in the viewer's query syntax, such as
 #'   `"age > 30 AND region IN ('West', 'South')"`. It is checked in the
 #'   browser when the view is used.
+#' @param pin Columns to pin: they move to the left of the table and stay in
+#'   view when scrolling sideways. They must be among those shown.
 #' @param sort Columns to sort by, in order of priority. Prefix a name with
 #'   `-` to sort it in descending order, as in `c("region", "-income")`. The
 #'   columns must be among those shown.
@@ -37,8 +40,9 @@
 #'   )
 #' }
 #' @export
-pqview_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL) {
+pqview_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL, pin = NULL) {
   check_names_arg(columns, "columns")
+  check_names_arg(pin, "pin")
   check_names_arg(sort, "sort")
   check_names_arg(counts, "counts")
   if (!is.null(counts) && !length(counts) %in% 1:2) {
@@ -48,7 +52,7 @@ pqview_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL
     stop("`where` must be a single string.", call. = FALSE)
   }
   structure(
-    list(columns = columns, where = where, sort = sort, counts = counts),
+    list(columns = columns, where = where, sort = sort, counts = counts, pin = pin),
     class = "pqview_view"
   )
 }
@@ -61,9 +65,10 @@ print.pqview_view <- function(x, ...) {
   }
   show("columns", x$columns)
   show("where", x$where)
+  show("pin", x$pin)
   show("sort", x$sort)
   show("counts", x$counts)
-  if (is.null(x$columns) && is.null(x$where) && is.null(x$sort) && is.null(x$counts)) {
+  if (is.null(x$columns) && is.null(x$where) && is.null(x$sort) && is.null(x$counts) && is.null(x$pin)) {
     cat("  (the starting columns, no filters)\n")
   }
   invisible(x)
@@ -117,7 +122,22 @@ browser_sort <- function(sort, names, shown, context = "") {
   out
 }
 
-# Views as a list the browser reads: list(name, columns, where, sort, counts).
+# Pinned columns, checked: they must exist and be shown.
+browser_pin <- function(pin, names, shown, context = "") {
+  if (is.null(pin)) return(NULL)
+  check_known(pin, names, "pin", context)
+  hidden <- setdiff(pin, shown)
+  if (length(hidden)) {
+    stop(
+      "Columns in ", context, "`pin` must be shown: add ",
+      paste0("'", hidden, "'", collapse = ", "), " to `columns`.",
+      call. = FALSE
+    )
+  }
+  as.list(unique(pin))
+}
+
+# Views as a list the browser reads: list(name, columns, where, sort, pinned, counts).
 browser_views <- function(views, names, default_columns) {
   if (is.null(views)) return(NULL)
   if (inherits(views, "pqview_view")) {
@@ -146,6 +166,7 @@ browser_views <- function(views, names, default_columns) {
     if (!is.null(v$columns)) out$columns <- as.list(v$columns)
     if (!is.null(v$where) && nzchar(trimws(v$where))) out$where <- v$where
     if (!is.null(v$sort)) out$sort <- browser_sort(v$sort, names, shown, context)
+    if (!is.null(v$pin)) out$pinned <- browser_pin(v$pin, names, shown, context)
     if (!is.null(v$counts)) out$counts <- as.list(v$counts)
     out
   }, labels, views))

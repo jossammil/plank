@@ -40,8 +40,8 @@ save_pqview(my_data, "my_data.html", title = "My data",
 # Start with a query, a proportional font (monospace is the default) and a dark theme
 pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
 
-# Start sorted, with the Counts panel open, and offer prepared views
-pqview(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
+# Start sorted and pinned, with the Counts panel open, and offer prepared views
+pqview(mtcars, sort = c("cyl", "-mpg"), pin = "rowname", counts = "cyl",
        views = list(
          "Fuel-efficient" = pqview_view(columns = c("mpg", "cyl", "hp", "wt"),
                                         where = "mpg > 25", sort = "-mpg"),
@@ -105,6 +105,19 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   expression) and `NOT` toggles.
 - **Sorting.** Click a header to sort; shift-click to add more sort keys.
   Missing values always sort last.
+- **Pinned columns.** The pin button in a header (shown on hover) moves the
+  column to the left and keeps it in view, with the row numbers, while the
+  rest of the table scrolls sideways. Click it again to unpin. Pins are part
+  of undo and of saved views; `pin =` sets them from R.
+- **Row panel.** Click a row number to see every column of that row, shown
+  or not, at full precision, in a panel at the right (it covers the table on
+  narrow screens).
+  - While it is open, clicking any row shows that row instead.
+  - The arrow buttons, or the Up and Down keys, step through the filtered
+    rows in their current order.
+  - "Find column" narrows the list; **Copy** copies the row as name and value
+    lines.
+  - Drag the panel's left edge to resize it; Esc or × closes it.
 - **Counts.** The **Counts** button opens a panel above the table with the
   number and share of filtered rows for each value of one column, or each
   combination of two. It updates as the filters change.

@@ -15,6 +15,7 @@ import {
   makeMarker, setMarks, usedValues, serializeMarkers, deserializeMarkers, fingerprint,
 } from './markers.js'
 import { CountsPanel } from './counts.js'
+import { RowDetail } from './detail.js'
 import {
   makeView, normalizeView, viewSignature, parseSaved, serializeSaved, describeView, viewToR, specFromView,
 } from './views.js'
@@ -98,7 +99,7 @@ export function mount(el, x) {
   }
 
   const state = {
-    selected: [], cols: [], specs: new Map(), sort: [], view: new Uint32Array(0),
+    selected: [], cols: [], specs: new Map(), sort: [], pinned: [], view: new Uint32Array(0),
     search: '', searchRegex: loadPref('searchRegex') === '1', searchInvert: false,
     queryMask: null, queryInvert: false, queryError: null, queryCols: [], queryText: '', computed: false,
   }
@@ -225,7 +226,8 @@ export function mount(el, x) {
     const countsBox = h('div', { class: 'pqv-counts', hidden: true, role: 'region', 'aria-label': 'Counts' })
     const pickerHost = h('div', { class: 'pqv-picker' })
     const gridHost = h('div', { class: 'pqv-gridwrap' })
-    const body = h('div', { class: 'pqv-body' }, pickerHost, gridHost)
+    const detailHost = h('div', { class: 'pqv-detail', hidden: true, role: 'complementary', 'aria-label': 'Row details' })
+    const body = h('div', { class: 'pqv-body' }, pickerHost, gridHost, detailHost)
 
     // Marker columns live alongside the decoded parquet columns.
     const markers = new Map()
@@ -265,12 +267,15 @@ export function mount(el, x) {
       updateFullQuery()
       updateExportSize()
       countsSoon()
+      detailSoon()
       viewLabelSoon()
       recordSoon()
     }
     const recomputeSoon = debounce(recompute, 90)
     let counts = null
     const countsSoon = debounce(() => counts && counts.update(), 120)
+    let detail = null
+    const detailSoon = debounce(() => detail && detail.refresh(), 120)
     let updateViewLabel = () => {}
     const viewLabelSoon = debounce(() => updateViewLabel(), 300)
 
@@ -375,6 +380,11 @@ export function mount(el, x) {
         recompute()
       },
       onMarkCell: (col, row, cell) => openCellMarker(col, row, cell),
+      onRowClick: (i, onNumber) => {
+        if (onNumber && detail.isOpen && detail.row === i) closeDetail()
+        else if (onNumber || detail.isOpen) openDetail(i)
+      },
+      onPin: (name) => togglePin(name),
     })
     api.grid = grid
 
@@ -502,7 +512,14 @@ export function mount(el, x) {
     let selectToken = 0
     const setSelected = async (names) => {
       const token = ++selectToken
-      const wanted = names.filter(hasCol)
+      let wanted = names.filter(hasCol)
+      // Pinned columns come first, in the order they were given.
+      const pins = new Set(state.pinned)
+      const pinned = wanted.filter((name) => pins.has(name))
+      const ordered = pinned.concat(wanted.filter((name) => !pins.has(name)))
+      if (ordered.some((name, k) => name !== wanted[k])) picker.setSelected(ordered)
+      wanted = ordered
+      state.pinned = pinned
       const cols = []
       for (const name of wanted) cols.push(await decode(name))
       if (token !== selectToken) return
@@ -512,7 +529,8 @@ export function mount(el, x) {
       // Filters and sort keys belong to visible columns only.
       for (const name of Array.from(state.specs.keys())) if (!keep.has(name)) state.specs.delete(name)
       state.sort = state.sort.filter((s) => keep.has(s.name))
-      grid.setColumns(cols)
+      state.pinned = state.pinned.filter((name) => keep.has(name))
+      grid.setColumns(cols, state.pinned.length)
       grid.setSort(state.sort)
       recompute(false)
     }
@@ -713,7 +731,7 @@ export function mount(el, x) {
       state.queryInvert = false
       setPressed(queryNotBtn, false)
       queryInput.value = parts.join(' AND ')
-      grid.setColumns(state.cols)
+      grid.setColumns(state.cols, state.pinned.length)
       runQuerySoon.cancel()
       runQuery()
       queryInput.focus()
@@ -780,6 +798,55 @@ export function mount(el, x) {
       grid.schedule()
     }
     countsBtn.addEventListener('click', () => setCountsOpen(!counts.open))
+
+    // ---- row details ------------------------------------------------------
+    detail = new RowDetail(detailHost, {
+      fields: fieldList,
+      tableNames: () => state.cols.map((c) => c.name),
+      peekCol,
+      getCol: (name) => decode(name),
+      getView: () => state.view,
+      onRow: (i, pos, reveal) => {
+        grid.setCurrent(i)
+        if (reveal && pos >= 0) grid.scrollToRow(pos)
+      },
+      onClose: () => closeDetail(),
+      copyText: (text) => copyText(text),
+      width: +loadPref('detailWidth') || 0,
+      onWidth: (px) => {
+        savePref('detailWidth', String(px))
+        grid.schedule()
+      },
+    })
+    api.detail = detail
+    const openDetail = (i) => {
+      // On a narrow widget the panel covers the table instead of squeezing it.
+      detailHost.classList.toggle('pqv-detail-over', el.clientWidth < 760)
+      detail.show(i, true)
+      grid.schedule()
+    }
+    const closeDetail = () => {
+      const wasFocused = detailHost.contains(document.activeElement)
+      detail.close()
+      grid.setCurrent(-1)
+      grid.schedule()
+      if (wasFocused) grid.scroller.focus({ preventScroll: true })
+    }
+    api.openDetail = openDetail
+    api.closeDetail = closeDetail
+
+    // ---- pinned columns ---------------------------------------------------
+    // Pinned columns sit first in the table and stay at the left edge.
+    const togglePin = (name) => {
+      const order = picker.selected().filter((n) => n !== name)
+      const pinned = state.pinned.filter((n) => n !== name)
+      if (pinned.length === state.pinned.length) pinned.push(name)
+      order.splice(pinned.length - (pinned.includes(name) ? 1 : 0), 0, name)
+      state.pinned = pinned
+      picker.setSelected(order)
+      return setSelected(order)
+    }
+    api.togglePin = togglePin
 
     // ---- marker columns -------------------------------------------------
     const dataPrint = fingerprint(ds.n, ds.fields.map((f) => f.name), String(x.data || ''))
@@ -1116,7 +1183,7 @@ export function mount(el, x) {
       state.queryCols = []
       queryToken++
       showQueryState()
-      grid.setColumns(state.cols)
+      grid.setColumns(state.cols, state.pinned.length)
       recompute()
     })
     // ---- export ---------------------------------------------------------
@@ -1244,11 +1311,12 @@ export function mount(el, x) {
         search: state.search, searchRegex: state.searchRegex, searchInvert: state.searchInvert,
         query: queryInput.value, queryInvert: state.queryInvert,
         sort: state.sort.map((x) => ({ ...x })),
+        pinned: state.pinned.slice(),
         marks: snapshotMarks(),
       }
       snap.sig = JSON.stringify([
         order, specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? Array.from(sp.codes).sort((a, b) => a - b) : null }]),
-        snap.search, snap.searchRegex, snap.searchInvert, snap.query, snap.queryInvert, snap.sort, snap.marks.ver,
+        snap.search, snap.searchRegex, snap.searchInvert, snap.query, snap.queryInvert, snap.sort, snap.pinned, snap.marks.ver,
       ])
       return snap
     }
@@ -1323,6 +1391,7 @@ export function mount(el, x) {
     async function applyTableState(t) {
       state.specs = t.specs
       state.sort = t.sort.map((x) => ({ ...x }))
+      state.pinned = (t.pinned || []).slice()
       state.search = t.search
       searchInput.value = t.search
       state.searchRegex = t.searchRegex
@@ -1377,10 +1446,15 @@ export function mount(el, x) {
       ? ds.fields.slice(0, DEFAULT_VISIBLE).map((f) => f.name)
       : [].concat(x.columns)).filter(hasCol)
     const resolveView = (v) => {
-      const columns = (v.columns || defaultColumns).filter(hasCol)
+      const shown = (v.columns || defaultColumns).filter(hasCol)
+      // Pinned columns lead the table, as the table will show them.
+      const pins = new Set(v.pinned)
+      const pinned = shown.filter((c) => pins.has(c))
+      const columns = pinned.concat(shown.filter((c) => !pins.has(c)))
       return {
         ...v,
         columns,
+        pinned,
         filters: v.filters.filter(([name]) => columns.includes(name)),
         sort: v.sort.filter((s) => columns.includes(s.name)),
       }
@@ -1419,6 +1493,7 @@ export function mount(el, x) {
       where: queryInput.value,
       whereInvert: state.queryInvert,
       sort: state.sort,
+      pinned: state.pinned,
       counts: counts.config(),
     })
     let activeView = null
@@ -1450,6 +1525,7 @@ export function mount(el, x) {
           order: v.columns,
           specs,
           sort: v.sort,
+          pinned: v.pinned,
           search: v.search,
           searchRegex: v.searchRegex,
           searchInvert: v.searchInvert,
@@ -1625,6 +1701,7 @@ export function mount(el, x) {
     for (const col of restoreMarks()) initial.push(col.name)
     counts.refreshFields()
     picker.setSelected(initial.filter(hasCol))
+    state.pinned = [].concat(x.pin || []).filter(hasCol)
     state.sort = [].concat(x.sort || [])
       .filter((s) => s && typeof s.name === 'string' && hasCol(s.name))
       .map((s) => ({ name: s.name, dir: s.dir === 'desc' ? 'desc' : 'asc' }))
