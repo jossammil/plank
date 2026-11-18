@@ -10,9 +10,10 @@ shared drive, and needs no R session, server or internet connection.
 
 ![pqview showing a filtered 100,000-row table](man/figures/pqview.png)
 
-To try it without R, download
-[`examples/sample.pqv.html`](examples/sample.pqv.html) (10,000 synthetic
-rows, about 1 MB; use **Download raw file** on that page) and double-click it.
+**[Try it in your browser](https://jossammil.github.io/pqview/)**: a saved
+viewer of 10,000 synthetic rows, about 1 MB. The same file is
+[`examples/sample.pqv.html`](examples/sample.pqv.html); download it (use
+**Download raw file** on that page) and double-click it to open it offline.
 
 ## Install
 
