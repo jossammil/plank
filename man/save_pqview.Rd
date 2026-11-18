@@ -4,22 +4,27 @@
 \alias{save_pqview}
 \title{Save a viewer as one self-contained HTML file}
 \usage{
-save_pqview(x, file, ..., page_title = NULL, open = FALSE)
+save_pqview(x, file, ..., page_title = NULL, open = FALSE, zip = FALSE)
 }
 \arguments{
 \item{x}{A \code{\link[=pqview]{pqview()}} widget, or anything \code{\link[=pqview]{pqview()}} accepts as \code{data}.}
 
-\item{file}{Path of the HTML file to write.}
+\item{file}{Path of the file to write. See \strong{File names} below.}
 
 \item{...}{Passed to \code{\link[=pqview]{pqview()}} when \code{x} is not already a widget.}
 
 \item{page_title}{Text for the browser tab. Defaults to the widget title,
 then the file name.}
 
-\item{open}{Open the file in a browser afterwards?}
+\item{open}{Open the file in a browser afterwards? With \code{zip = TRUE}, a
+copy of the HTML file in a temporary folder is opened.}
+
+\item{zip}{Write a zip archive holding the HTML file instead of the HTML
+file itself? See \strong{Zipped files} below.}
 }
 \value{
-The path to the file, invisibly.
+The path to the file written (the zip archive with \code{zip = TRUE}),
+invisibly.
 }
 \description{
 Writes a single \code{.html} file with the data, scripts and styles all inline.
@@ -30,8 +35,35 @@ and needs no server or internet connection.
 Unlike \code{\link[htmlwidgets:saveWidget]{htmlwidgets::saveWidget()}} with \code{selfcontained = TRUE}, this does
 not run pandoc, so it stays fast when the embedded data is large.
 }
+\section{File names}{
+
+Files from pqview are named \code{name.pqv.html} by convention: the \code{.html}
+ending makes the file open in a browser on any computer, and the \code{.pqv}
+before it makes pqview files easy to find (search for \code{.pqv.html}) and
+tell apart from other web pages. A \code{file} without an extension, or ending
+in \code{.pqv}, gets \code{.pqv.html} (or \code{.html}) added. A file name that does not
+end in \code{.html} or \code{.htm} gives a warning, because browsers show such a
+file as plain text instead of opening the viewer.
+}
+
+\section{Zipped files}{
+
+With \code{zip = TRUE} (or a \code{file} ending in \code{.zip}), the HTML file is put in a
+zip archive, \code{name.pqv.zip}, which is smaller to email or upload. The
+embedded data is already compressed, so the zip file is about 30\% smaller
+than the HTML file for a large table, and up to 70\% smaller for a small
+one, where the viewer's own code is most of the file. Whoever receives it
+unzips it and double-clicks the \code{.pqv.html} file inside. The archive is
+written with the \pkg{zip} package when it is installed, and otherwise
+with the \code{zip} command line program (see \code{\link[utils:zip]{utils::zip()}}).
+}
+
 \examples{
 if (interactive()) {
-  save_pqview(mtcars, tempfile(fileext = ".html"), title = "mtcars", open = TRUE)
+  # Writes mtcars.pqv.html in the temporary folder
+  save_pqview(mtcars, file.path(tempdir(), "mtcars"), title = "mtcars", open = TRUE)
+
+  # Writes mtcars.pqv.zip, holding mtcars.pqv.html
+  save_pqview(mtcars, file.path(tempdir(), "mtcars"), zip = TRUE)
 }
 }

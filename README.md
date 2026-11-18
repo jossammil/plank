@@ -33,9 +33,12 @@ pqview(mtcars)
 # From a parquet file, choosing which columns show first
 pqview("big_table.parquet", columns = c("id", "state", "amount"))
 
-# One portable file, with a title and a line of notes in the top band
-save_pqview(my_data, "my_data.html", title = "My data",
+# One portable file, my_data.pqv.html, with a title and a line of notes in the top band
+save_pqview(my_data, "my_data", title = "My data",
             notes = "Extract of 2024-06-30; one row per visit", open = TRUE)
+
+# The same file in a zip archive, my_data.pqv.zip, to email or upload
+save_pqview(my_data, "my_data", title = "My data", zip = TRUE)
 
 # Start with a query, a proportional font (monospace is the default) and a dark theme
 pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
@@ -48,6 +51,14 @@ pqview(mtcars, sort = c("cyl", "-mpg"), pin = "rowname", counts = "cyl",
          "By cylinders and gears" = pqview_view(counts = c("cyl", "gear"))
        ))
 ```
+
+Saved files are named `name.pqv.html`: the `.html` ending opens them in a
+browser on any computer, and the `.pqv` before it lets you find them all by
+searching for `.pqv.html`. A name without an extension gets `.pqv.html`
+added. A zip archive is about 30% smaller for a large table (the data inside is
+already compressed) and up to 70% smaller for a small one, where the
+viewer's own code is most of the file. The person you send it to unzips it
+and double-clicks the `.pqv.html` file inside.
 
 It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 (use `embed-resources: true` for a single-file document) and in Shiny with
