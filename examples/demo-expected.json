@@ -32,5 +32,36 @@
   "west_income_sum": 1435638435.94,
   "west_age_na": 748,
   "west_visit_first": "2023-03-18",
-  "west_updated_first": "2024-02-07 10:05:03"
+  "west_updated_first": "2024-02-07 10:05:03",
+  "counts_region": {
+    "Midwest": 24991,
+    "Northeast": 24906,
+    "South": 25174,
+    "West": 24929
+  },
+  "counts_region_enrolled": {
+    "Midwest FALSE": 11787,
+    "Midwest NA": 1242,
+    "Midwest TRUE": 11962,
+    "Northeast FALSE": 11841,
+    "Northeast NA": 1227,
+    "Northeast TRUE": 11838,
+    "South FALSE": 11949,
+    "South NA": 1288,
+    "South TRUE": 11937,
+    "West FALSE": 11723,
+    "West NA": 1243,
+    "West TRUE": 11963
+  },
+  "mean_income_region": {
+    "Midwest": 62625.4,
+    "Northeast": 62711.03,
+    "South": 62359.36,
+    "West": 62604.15
+  },
+  "income_under_100k": 77894,
+  "updated_dst_hour": 7,
+  "visit_months": 37,
+  "view_older_west": 9513,
+  "view_older_west_first": "R048742"
 }

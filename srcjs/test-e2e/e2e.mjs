@@ -98,6 +98,7 @@ const query = async (text) => {
 check('status shows all rows', await page.locator('.pqv-status').innerText(), '100,000 rows')
 check('columns listed in picker', await page.locator('.pqv-pitem').count(), 30)
 check('columns shown by default', await page.locator('.pqv-hcell[data-name]').count(), 10)
+check('no view is current at the start', await page.locator('.pqv-toolbar .pqv-viewsbtn').innerText(), 'Views')
 check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-row').count()) < 80, true)
 
 // ---- standalone top offset ------------------------------------------------
@@ -659,6 +660,215 @@ check('panel resized by dragging its edge', Math.abs(w1 - w0 - 150) <= 3, true)
 await page.locator('.pqv-presizer').dblclick()
 check('double-clicking the edge toggles the width', await page.locator('.pqv-picker').evaluate((e) => e.offsetWidth), 270)
 
+// ---- counts panel --------------------------------------------------------------
+const countsBtn = page.locator('.pqv-toolbar .pqv-btn', { hasText: /^Counts$/ })
+const cpanel = page.locator('.pqv-counts')
+const csel = (label) => cpanel.locator(`select[aria-label="${label}"]`)
+const cwait = () => page.waitForTimeout(400)
+const crows = () => cpanel.locator('tbody tr').evaluateAll((trs) => trs.map((tr) =>
+  Array.from(tr.querySelectorAll('td')).map((td) => td.innerText.trim())))
+const num = (t) => +t.replace(/,/g, '')
+const crowOf = (label) => cpanel.locator('tbody tr').filter({ has: page.locator('td.pqv-ck', { hasText: new RegExp(`^${label}$`) }) })
+const sorted = (o) => JSON.stringify(Object.entries(o).sort())
+// Finds a group by its label(s) through the panel's API: [index, count]
+const cgroup = (label) => page.evaluate((label) => {
+  const r = document.querySelector('.pqv').pqview.counts.result
+  const j = r.groups.findIndex((g) => r.keys.map((k, i) => k.label(i ? g.b : g.a)).join(' ') === label)
+  return j < 0 ? null : [j, r.groups[j].count]
+}, label)
+await clear()
+await countsBtn.click()
+await cwait()
+check('counts panel opens', await cpanel.isVisible(), true)
+check('counts button pressed', await countsBtn.getAttribute('aria-pressed'), 'true')
+check('counts by the first shown factor at first', await csel('Count rows by').inputValue(), 'state')
+await csel('Count rows by').selectOption('region')
+await cwait()
+let crow = await crows()
+check('one row per region', crow.length, 4)
+check('region counts match R', sorted(Object.fromEntries(crow.map((r) => [r[0], num(r[1])]))), sorted(expected.counts_region))
+check('largest group first', crow[0][0], 'South')
+check('shares add to 100%', Math.round(crow.reduce((a, r) => a + parseFloat(r[2]), 0)), 100)
+check('counts info line', await cpanel.locator('.pqv-counts-info').innerText(), '4 groups · 100,000 rows')
+await cpanel.locator('th button', { hasText: 'Rows' }).click()
+check('sorting by rows ascending', (await crows())[0][0], 'Northeast')
+await csel('Then by').selectOption('enrolled')
+await cwait()
+crow = await crows()
+check('two columns: every combination, missing included', sorted(Object.fromEntries(crow.map((r) => [`${r[0]} ${r[1]}`, num(r[2])]))), sorted(expected.counts_region_enrolled))
+await csel('Then by').selectOption('')
+await csel('Value column').selectOption('income')
+await cwait()
+crow = await crows()
+check('mean income per region matches R', sorted(Object.fromEntries(crow.map((r) => [r[0], r[3]]))),
+  sorted(Object.fromEntries(Object.entries(expected.mean_income_region).map(([k, v]) => [k, String(v)]))))
+check('value column header', await cpanel.locator('thead th').nth(3).innerText(), 'Mean income')
+await csel('Value column').selectOption('')
+await cwait()
+
+// click a group to keep only it; Exclude hides it
+await step()
+await crowOf('West').locator('td').first().click()
+await settle()
+check('clicking a group filters to it', await count(), expected.region_exact_west)
+check('the group condition goes into WHERE', await page.locator('.pqv-query-input').inputValue(), "region = 'West'")
+await cwait()
+check('counts follow the filters', (await crows()).length, 1)
+await step()
+await undoBtn.click()
+await settle()
+check('undo removes the group filter', await count(), expected.total)
+await cwait()
+const westRow = crowOf('West')
+await westRow.hover()
+await westRow.locator('.pqv-counts-ex').click()
+await settle()
+check('Exclude hides the group', await count(), expected.total - expected.region_exact_west)
+check('exclude condition', await page.locator('.pqv-query-input').inputValue(), "region != 'West'")
+await query("age > 30 OR age IS NULL")
+const beforeGroup = await count()
+await cwait()
+await crowOf('South').locator('td').first().click()
+await settle()
+check('a group adds to an existing WHERE with brackets', await page.locator('.pqv-query-input').inputValue(), "(age > 30 OR age IS NULL) AND region = 'South'")
+check('rows after adding a group', await count() < beforeGroup, true)
+await clear()
+
+// dates by month, numbers in ranges, date-times by local hour
+await csel('Count rows by').selectOption('visit_date')
+await cwait()
+await csel('Group values of the first column by').selectOption('month')
+await cwait()
+check('months of visit_date, plus missing', await page.evaluate(() => document.querySelector('.pqv').pqview.counts.result.groups.length), expected.visit_months)
+check('June 2023 visits', (await cgroup('2023-06'))[1], expected.visit_2023_06)
+await csel('Count rows by').selectOption('income')
+await cwait()
+check('incomes fall in ranges by default', await csel('Group values of the first column by').inputValue(), 'range')
+check('incomes under 100,000', (await cgroup('[0, 100000)'))[1], expected.income_under_100k)
+await csel('Count rows by').selectOption('updated_at')
+await cwait()
+await csel('Group values of the first column by').selectOption('hour')
+await cwait()
+const dstHour = await cgroup('2024-03-10 01:00')
+check('the hour before clocks went forward', dstHour && dstHour[1], expected.updated_dst_hour)
+await page.evaluate((j) => document.querySelector('.pqv').pqview.counts.drill(j, false), dstHour[0])
+await settle()
+check('filtering to that hour finds the same rows', await count(), expected.updated_dst_hour)
+await clear()
+
+// copy and download the counts
+await csel('Count rows by').selectOption('region')
+await cwait()
+const [cdl] = await Promise.all([page.waitForEvent('download'), cpanel.locator('.pqv-btn', { hasText: 'CSV' }).click()])
+check('counts CSV file name', cdl.suggestedFilename(), 'Synthetic_demo_counts.csv')
+const ccsv = readFileSync(await cdl.path(), 'utf8').trimEnd().split('\r\n')
+check('counts CSV header', ccsv[0], 'region,rows,percent')
+check('counts CSV rows', ccsv.length, 5)
+if (engine === 'chromium') {
+  await cpanel.locator('.pqv-btn', { hasText: 'Copy' }).click()
+  const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ''))
+  check('counts copied as tab-separated text', clip.split(/\r?\n/)[0], 'region\trows\tpercent')
+}
+if (shots) await page.screenshot({ path: `${shots}/${engine}-06-counts.png` })
+await cpanel.locator('.pqv-btn[aria-label="Close the Counts panel"]').click()
+check('counts panel closes', await cpanel.isVisible(), false)
+check('counts button released', await countsBtn.getAttribute('aria-pressed'), 'false')
+
+// ---- views ----------------------------------------------------------------------
+const viewsBtn = page.locator('.pqv-toolbar .pqv-viewsbtn')
+const vpanel = page.locator('.pqv-viewspanel')
+const openViews = async () => {
+  if (!(await vpanel.isVisible())) await viewsBtn.click()
+}
+const applyView = async (name) => {
+  await openViews()
+  await vpanel.locator('.pqv-view-apply').filter({ has: page.locator('.pqv-view-name', { hasText: new RegExp(`^${name}$`) }) }).click()
+  await settle()
+  await step()
+}
+await openViews()
+check('views from R are listed', (await vpanel.locator('.pqv-view-name').allInnerTexts()).join('|'), 'Older West|Region by enrolment')
+await applyView('Older West')
+check('R view: rows', await count(), expected.view_older_west)
+check('R view: columns', (await headNames()).join('|'), 'record_id|state|region|age|income|enrolled')
+check('R view: sorted by income, largest first', (await firstRow())[1], expected.view_older_west_first)
+check('R view: WHERE shown', await page.locator('.pqv-query-input').inputValue(), "age >= 65 AND region = 'West'")
+check('Views button names the current view', await viewsBtn.innerText(), 'View: Older West')
+await hcell('age').locator('input').nth(0).fill('70')
+await settle()
+await step()
+check('changing a filter leaves the view', await viewsBtn.innerText(), 'Views')
+const c70 = await count()
+await openViews()
+await vpanel.locator('input[aria-label="View name"]').fill('Seventy')
+await vpanel.locator('.pqv-btn', { hasText: 'Save' }).click()
+check('view saved', await vpanel.locator('.pqv-mark-msg').innerText(), "Saved 'Seventy'.")
+check('saved view listed', (await vpanel.locator('.pqv-view-name').allInnerTexts()).join('|'), 'Older West|Region by enrolment|Seventy')
+check('saved view is current', await vpanel.locator('.pqv-view-on .pqv-view-name').innerText(), 'Seventy')
+const rCode = await page.evaluate(() => document.querySelector('.pqv').pqview.views.rCode())
+check('R code for the view', rCode, [
+  '"Seventy" = pqview_view(',
+  '  columns = c("record_id", "state", "region", "age", "income", "enrolled"),',
+  '  where = "age >= 70 AND (age >= 65 AND region = \'West\')",',
+  '  sort = "-income"',
+  ')',
+].join('\n'))
+await page.keyboard.press('Escape')
+await applyView('Region by enrolment')
+check('view with counts: all rows', await count(), expected.total)
+check('view with counts: default columns', (await headNames()).length, 10)
+await cwait()
+check('view with counts opens the panel', await cpanel.isVisible(), true)
+check('view with counts: two columns', (await crows()).length, 12)
+check('view with counts is current', await viewsBtn.innerText(), 'View: Region by enrolment')
+await cpanel.locator('.pqv-btn[aria-label="Close the Counts panel"]').click()
+await page.waitForTimeout(400)
+check('closing its counts leaves the view', await viewsBtn.innerText(), 'Views')
+await applyView('Seventy')
+check('saved view restores rows', await count(), c70)
+check('saved view restores the column filter', await hcell('age').locator('input').nth(0).inputValue(), '70')
+await undoBtn.click()
+await settle()
+check('undo goes back to the previous view', await count(), expected.total)
+await step()
+await redoBtn.click()
+await settle()
+check('redo returns to the saved view', await count(), c70)
+if (markStorage) {
+  await page.reload()
+  await ready(page)
+  await openViews()
+  check('saved view kept after reload', (await vpanel.locator('.pqv-view-name').allInnerTexts()).includes('Seventy'), true)
+  await applyView('Seventy')
+  check('saved view works after reload', await count(), c70)
+  check('restored filter after reload', await hcell('age').locator('input').nth(0).inputValue(), '70')
+} else {
+  console.log('SKIP  view persistence (storage unavailable for file:// pages in this browser)')
+}
+await openViews()
+const myView = vpanel.locator('.pqv-view').filter({ has: page.locator('.pqv-view-name', { hasText: /^Seventy$/ }) })
+await myView.locator('.pqv-link', { hasText: 'Rename' }).click()
+await vpanel.locator('input[aria-label="New name for Seventy"]').fill('Over seventy')
+await vpanel.locator('input[aria-label="New name for Seventy"]').press('Enter')
+check('view renamed', (await vpanel.locator('.pqv-view-name').allInnerTexts()).join('|'), 'Older West|Region by enrolment|Over seventy')
+const renamed = vpanel.locator('.pqv-view').filter({ has: page.locator('.pqv-view-name', { hasText: /^Over seventy$/ }) })
+await renamed.locator('.pqv-link', { hasText: 'Delete' }).click()
+await renamed.locator('.pqv-link.pqv-danger', { hasText: 'Delete' }).click()
+check('view deleted', (await vpanel.locator('.pqv-view-name').allInnerTexts()).join('|'), 'Older West|Region by enrolment')
+await page.keyboard.press('Escape')
+if (await cpanel.isVisible()) await cpanel.locator('.pqv-btn[aria-label="Close the Counts panel"]').click()
+await applyView('Older West')
+await page.locator('.pqv-query-input').fill('')
+await page.locator('.pqv-query-input').press('Enter')
+await clear()
+const defaultCols = ['record_id', 'state', 'region', 'age', 'income', 'score', 'enrolled', 'visit_date', 'updated_at', 'comment']
+await page.evaluate(async (cols) => {
+  const p = document.querySelector('.pqv').pqview
+  p.picker.setSelected(cols)
+  p.picker.emit()
+}, defaultCols)
+await settle()
+
 // ---- theme and mono switches persist across reloads ------------------------
 const themeBtn = page.locator('.pqv-switches .pqv-icon')
 await themeBtn.click() // auto -> light
@@ -710,6 +920,24 @@ const scroll = await page.evaluate(() => {
 })
 console.log('render per scroll frame (ms):', JSON.stringify(scroll))
 check('scrolling reaches the last row', scroll.lastRow, '100000')
+
+// ---- sort and counts given in R ----------------------------------------------
+const remount = await page.evaluate(async () => {
+  const el = document.querySelector('.pqv')
+  const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
+  const api = window.PQView.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'] })
+  await api.ready
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  return {
+    open: !el.querySelector('.pqv-counts').hidden,
+    groups: api.counts.result ? api.counts.result.groups.length : null,
+    sort: api.state.sort.map((s) => s.name + ' ' + s.dir).join(),
+  }
+})
+check('sort from R applied at start', remount.sort, 'income desc')
+check('counts from R open the panel', remount.open, true)
+check('counts from R: one row per region', remount.groups, 4)
+check('first row is the largest income', (await firstRow())[5], String(+expected.top_income.toPrecision(7)))
 
 // ---- narrow screen --------------------------------------------------------
 const narrow = await browser.newContext({ viewport: { width: 420, height: 800 } })

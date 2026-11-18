@@ -14,6 +14,10 @@ import { fullQueryParts, formatFullQuery } from './sql.js'
 import {
   makeMarker, setMarks, usedValues, serializeMarkers, deserializeMarkers, fingerprint,
 } from './markers.js'
+import { CountsPanel } from './counts.js'
+import {
+  makeView, normalizeView, viewSignature, parseSaved, serializeSaved, describeView, viewToR, specFromView,
+} from './views.js'
 
 const DEFAULT_VISIBLE = 10
 const COPY_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg>'
@@ -147,6 +151,14 @@ export function mount(el, x) {
       class: 'pqv-btn', type: 'button', text: 'Mark', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
       title: 'Add a marker column and mark the filtered rows',
     })
+    const countsBtn = h('button', {
+      class: 'pqv-btn', type: 'button', text: 'Counts', 'aria-pressed': 'false',
+      title: 'Show or hide the Counts panel: filtered rows per value of one or two columns',
+    })
+    const viewsBtn = h('button', {
+      class: 'pqv-btn pqv-viewsbtn', type: 'button', text: 'Views', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+      title: 'Save the columns, filters and sort as a named view, or switch to a saved one',
+    })
     const exportBtn = h('button', {
       class: 'pqv-btn', type: 'button', text: 'Export', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
       title: 'Save or copy the filtered rows and visible columns: CSV, Excel, R (.rds), parquet or clipboard',
@@ -173,9 +185,9 @@ export function mount(el, x) {
     header.classList.toggle('pqv-header-empty', !x.title && !notes)
 
     const toolbar = h('div', { class: 'pqv-toolbar' },
-      pickerBtn,
+      pickerBtn, viewsBtn,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
-      status, h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, markBtn, exportBtn,
+      status, h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, fullBtn, monoBtn, themeBtn))
 
     // ---- query bar ------------------------------------------------------
@@ -210,6 +222,7 @@ export function mount(el, x) {
       queryMsg)
     queryBar.querySelector('label').addEventListener('click', () => queryInput.focus())
 
+    const countsBox = h('div', { class: 'pqv-counts', hidden: true, role: 'region', 'aria-label': 'Counts' })
     const pickerHost = h('div', { class: 'pqv-picker' })
     const gridHost = h('div', { class: 'pqv-gridwrap' })
     const body = h('div', { class: 'pqv-body' }, pickerHost, gridHost)
@@ -217,6 +230,8 @@ export function mount(el, x) {
     // Marker columns live alongside the decoded parquet columns.
     const markers = new Map()
     const fieldNames = () => ds.fields.map((f) => f.name).concat(Array.from(markers.keys()))
+    const fieldList = () => ds.fields.map((f) => ({ name: f.name, tag: f.tag }))
+      .concat(Array.from(markers.keys(), (name) => ({ name, tag: 'mark' })))
     const hasCol = (name) => ds.has(name) || markers.has(name)
     const peekCol = (name) => markers.get(name) || ds.peek(name)
 
@@ -249,9 +264,15 @@ export function mount(el, x) {
       refreshChartsSoon()
       updateFullQuery()
       updateExportSize()
+      countsSoon()
+      viewLabelSoon()
       recordSoon()
     }
     const recomputeSoon = debounce(recompute, 90)
+    let counts = null
+    const countsSoon = debounce(() => counts && counts.update(), 120)
+    let updateViewLabel = () => {}
+    const viewLabelSoon = debounce(() => updateViewLabel(), 300)
 
     // ---- full query -------------------------------------------------------
     const currentParts = () => fullQueryParts({
@@ -706,8 +727,63 @@ export function mount(el, x) {
       if (prefs.query) queryInput.focus()
     })
 
+    const showQueryBar = () => {
+      if (!queryBar.hidden) return
+      prefs.query = true
+      queryBar.hidden = false
+      savePref('query', '1')
+      setPressed(queryBtn, true)
+      grid.schedule()
+    }
+    // Adds a condition to the WHERE query, keeping the rows it already selects.
+    const addWhere = (cond) => {
+      const base = state.queryMask !== null ? state.queryText : ''
+      let text = cond
+      if (base) {
+        const b = state.queryInvert ? `(${base}) IS NOT TRUE` : /\bOR\b/i.test(base) ? `(${base})` : base
+        text = `${b} AND ${cond}`
+      }
+      state.queryInvert = false
+      setPressed(queryNotBtn, false)
+      queryInput.value = text
+      showQueryBar()
+      runQuerySoon.cancel()
+      return runQuery()
+    }
+    api.addWhere = addWhere
+
+    // ---- counts panel ---------------------------------------------------
+    counts = new CountsPanel(countsBox, {
+      fields: fieldList,
+      getCol: (name) => decode(name),
+      getView: () => state.view,
+      defaultBy: () => {
+        const c = state.cols.find((c) => c.type === 'category' && !c.marker) ||
+          state.cols.find((c) => c.type === 'boolean') || state.cols[0]
+        return c ? c.name : (ds.fields[0] ? ds.fields[0].name : null)
+      },
+      onDrill: (cond) => addWhere(cond),
+      copyText: (text) => copyText(text),
+      download: (blob) => download(blob, 'csv', fileBase + '_counts'),
+      onClose: () => setCountsOpen(false),
+      onChange: () => viewLabelSoon(),
+      height: +loadPref('countsHeight') || 0,
+      onHeight: (px) => {
+        savePref('countsHeight', String(px))
+        grid.schedule()
+      },
+    })
+    api.counts = counts
+    const setCountsOpen = (on) => {
+      counts.show(on)
+      setPressed(countsBtn, on)
+      grid.schedule()
+    }
+    countsBtn.addEventListener('click', () => setCountsOpen(!counts.open))
+
     // ---- marker columns -------------------------------------------------
-    const marksKey = 'pqview.marks.' + fingerprint(ds.n, ds.fields.map((f) => f.name), String(x.data || ''))
+    const dataPrint = fingerprint(ds.n, ds.fields.map((f) => f.name), String(x.data || ''))
+    const marksKey = 'pqview.marks.' + dataPrint
     const marksStore = { error: null }
     const saveMarks = () => {
       try {
@@ -762,6 +838,7 @@ export function mount(el, x) {
       picker.addField(markerField(col))
       picker.updateStats(col, true)
       picker.setChart(col.name, chartFor(col))
+      counts.refreshFields()
       await setSelected(picker.selected())
       saveMarksSoon()
       return col
@@ -794,6 +871,7 @@ export function mount(el, x) {
       }
       for (const s of state.sort) if (s.name === from) s.name = to
       picker.renameField(from, to)
+      counts.renameField(from, to)
       grid.widths.delete(from)
       await setSelected(picker.selected())
       saveMarksSoon()
@@ -803,6 +881,7 @@ export function mount(el, x) {
       markers.delete(name)
       state.specs.delete(name)
       picker.removeField(name)
+      counts.refreshFields()
       await reselect()
       saveMarksSoon()
     }
@@ -1042,9 +1121,9 @@ export function mount(el, x) {
     })
     // ---- export ---------------------------------------------------------
     const fileBase = String(x.title || 'data').replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'data'
-    const download = (blob, ext) => {
+    const download = (blob, ext, base = fileBase) => {
       const url = URL.createObjectURL(blob)
-      const a = h('a', { href: url, download: `${fileBase}.${ext}` })
+      const a = h('a', { href: url, download: `${base}.${ext}` })
       el.append(a)
       a.click()
       a.remove()
@@ -1129,7 +1208,7 @@ export function mount(el, x) {
     })
 
     loading.remove()
-    el.append(header, toolbar, queryBar, fullBox, body)
+    el.append(header, toolbar, queryBar, fullBox, countsBox, body)
     // On a narrow container the table matters more than the column list.
     if (el.clientWidth && el.clientWidth < 640) {
       pickerHost.hidden = true
@@ -1226,30 +1305,39 @@ export function mount(el, x) {
           }
           marksVer = snap.marks.ver
           marksSnap = snap.marks
+          counts.refreshFields()
           saveMarksSoon()
         }
-        state.specs = new Map(snap.specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? new Set(sp.codes) : null }]))
-        state.sort = snap.sort.map((x) => ({ ...x }))
-        state.search = snap.search
-        searchInput.value = snap.search
-        state.searchRegex = snap.searchRegex
-        setPressed(searchRegexBtn, snap.searchRegex)
-        searchInput.placeholder = snap.searchRegex ? 'Regex across visible columns' : 'Search visible columns'
-        state.searchInvert = snap.searchInvert
-        setPressed(searchNotBtn, snap.searchInvert)
-        queryInput.value = snap.query
-        state.queryInvert = snap.queryInvert
-        setPressed(queryNotBtn, snap.queryInvert)
-        const order = snap.order.filter(hasCol)
-        picker.setSelected(order)
-        await setSelected(order)
-        runQuerySoon.cancel()
-        await runQuery()
+        await applyTableState({
+          ...snap,
+          specs: new Map(snap.specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? new Set(sp.codes) : null }])),
+        })
         for (const col of markers.values()) picker.setChart(col.name, chartFor(col))
       } finally {
         recordSoon.cancel()
         history.busy = false
       }
+    }
+    // Puts the table in a given state: columns in order, filters, search,
+    // WHERE query and sort.
+    async function applyTableState(t) {
+      state.specs = t.specs
+      state.sort = t.sort.map((x) => ({ ...x }))
+      state.search = t.search
+      searchInput.value = t.search
+      state.searchRegex = t.searchRegex
+      setPressed(searchRegexBtn, t.searchRegex)
+      searchInput.placeholder = t.searchRegex ? 'Regex across visible columns' : 'Search visible columns'
+      state.searchInvert = t.searchInvert
+      setPressed(searchNotBtn, t.searchInvert)
+      queryInput.value = t.query
+      state.queryInvert = t.queryInvert
+      setPressed(queryNotBtn, t.queryInvert)
+      const order = t.order.filter(hasCol)
+      picker.setSelected(order)
+      await setSelected(order)
+      runQuerySoon.cancel()
+      await runQuery()
     }
     const stepHistory = async (back) => {
       if (history.busy) return
@@ -1282,16 +1370,274 @@ export function mount(el, x) {
     document.addEventListener('keydown', onUndoKey)
     paintHistory()
 
-    const initial = x.columns == null
+    // ---- saved views ------------------------------------------------------
+    // A view is a named state of the table. Views from R (pqview(views = ...))
+    // come with the file; views saved here stay in this browser.
+    const defaultColumns = (x.columns == null
       ? ds.fields.slice(0, DEFAULT_VISIBLE).map((f) => f.name)
-      : [].concat(x.columns)
+      : [].concat(x.columns)).filter(hasCol)
+    const resolveView = (v) => {
+      const columns = (v.columns || defaultColumns).filter(hasCol)
+      return {
+        ...v,
+        columns,
+        filters: v.filters.filter(([name]) => columns.includes(name)),
+        sort: v.sort.filter((s) => columns.includes(s.name)),
+      }
+    }
+    const authorViews = []
+    for (const raw of [].concat(x.views || [])) {
+      const v = normalizeView(raw)
+      if (v && !authorViews.some((a) => a.name === v.name)) authorViews.push(resolveView(v))
+    }
+    const viewsKey = 'pqview.views.' + dataPrint
+    const viewStore = { error: null }
+    let savedViews = []
+    try {
+      savedViews = parseSaved(window.localStorage.getItem(viewsKey) || '[]')
+    } catch {
+      savedViews = []
+    }
+    const saveViews = () => {
+      try {
+        if (savedViews.length) window.localStorage.setItem(viewsKey, serializeSaved(savedViews))
+        else window.localStorage.removeItem(viewsKey)
+        viewStore.error = null
+        return true
+      } catch {
+        viewStore.error = 'Views could not be saved in this browser (storage is full or blocked).'
+        return false
+      }
+    }
+    const currentView = (name = '') => makeView(name, {
+      columns: picker.selected(),
+      specs: Array.from(state.specs),
+      colOf: peekCol,
+      search: state.search,
+      searchRegex: state.searchRegex,
+      searchInvert: state.searchInvert,
+      where: queryInput.value,
+      whereInvert: state.queryInvert,
+      sort: state.sort,
+      counts: counts.config(),
+    })
+    let activeView = null
+    // A view that sets the Counts panel matches only when the panel counts by
+    // the same columns.
+    const countsKey = (c) => (c ? c.by.join('\u0000') : null)
+    updateViewLabel = () => {
+      const cur = currentView()
+      const sig = viewSignature(cur)
+      const match = authorViews.concat(savedViews).find((v) => viewSignature(resolveView(v)) === sig &&
+        (!v.counts || countsKey(v.counts) === countsKey(cur.counts)))
+      activeView = match ? match.name : null
+      viewsBtn.textContent = match ? `View: ${match.name}` : 'Views'
+      viewsBtn.classList.toggle('pqv-on', !!match)
+    }
+    const applyView = async (view) => {
+      if (history.busy) return
+      const v = resolveView(view)
+      recordSoon.cancel()
+      record()
+      history.busy = true
+      try {
+        grid.closePop()
+        // Columns are read first so filters can find their values.
+        for (const name of v.columns) await decode(name)
+        const specs = new Map()
+        for (const [name, stored] of v.filters) specs.set(name, specFromView(stored, peekCol(name), emptySpec))
+        await applyTableState({
+          order: v.columns,
+          specs,
+          sort: v.sort,
+          search: v.search,
+          searchRegex: v.searchRegex,
+          searchInvert: v.searchInvert,
+          query: v.where,
+          queryInvert: v.whereInvert,
+        })
+        if (v.where) showQueryBar()
+        if (v.counts) {
+          counts.setConfig(v.counts)
+          setCountsOpen(true)
+        }
+      } finally {
+        recordSoon.cancel()
+        history.busy = false
+      }
+      record()
+      updateViewLabel()
+    }
+    const saveView = (name) => {
+      const v = currentView(name)
+      const k = savedViews.findIndex((s) => s.name === name)
+      if (k >= 0) savedViews[k] = v
+      else savedViews.push(v)
+      const ok = saveViews()
+      updateViewLabel()
+      return { replaced: k >= 0, ok }
+    }
+    const viewNamed = (name) => authorViews.concat(savedViews).find((v) => v.name === name)
+    api.views = {
+      list: () => authorViews.concat(savedViews).map((v) => v.name),
+      saved: () => savedViews.slice(),
+      current: () => currentView(),
+      active: () => activeView,
+      apply: (name) => (viewNamed(name) ? applyView(viewNamed(name)) : Promise.reject(new Error(`No view called '${name}'`))),
+      save: (name) => saveView(name),
+      rCode: () => viewToR(currentView(), currentParts().join(' AND '), activeView || ''),
+    }
+
+    const openViewsPanel = (message = '', bad = false) => {
+      const msg = h('div', { class: 'pqv-mark-msg', 'aria-live': 'polite', text: message || viewStore.error || '' })
+      if (bad || (!message && viewStore.error)) msg.classList.add('pqv-bad-text')
+      const fail = (text) => {
+        msg.textContent = text
+        msg.classList.add('pqv-bad-text')
+      }
+      const nameInput = h('input', {
+        class: 'pqv-input', type: 'text', placeholder: 'Name for the current view', 'aria-label': 'View name',
+        spellcheck: 'false', autocomplete: 'off', maxlength: '120',
+      })
+      const doSave = () => {
+        const name = nameInput.value.trim()
+        if (!name) {
+          fail('Enter a name for the view.')
+          nameInput.focus()
+          return
+        }
+        if (authorViews.some((v) => v.name === name)) {
+          fail(`This report already has a view called '${name}'.`)
+          nameInput.focus()
+          return
+        }
+        const { replaced, ok } = saveView(name)
+        openViewsPanel(ok ? `${replaced ? 'Replaced' : 'Saved'} '${name}'.` : viewStore.error, !ok)
+      }
+      nameInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          doSave()
+        }
+      })
+      const saveBtn = h('button', { class: 'pqv-btn pqv-primary', type: 'button', text: 'Save', onclick: doSave })
+
+      const item = (v, own) => {
+        const row = h('div', { class: v.name === activeView ? 'pqv-view pqv-view-on' : 'pqv-view' })
+        const apply = h('button', {
+          class: 'pqv-view-apply', type: 'button',
+          title: v.name === activeView ? 'This is the current view' : 'Switch to this view',
+          onclick: () => applyView(v),
+        },
+        h('span', { class: 'pqv-view-name', text: v.name }),
+        h('span', { class: 'pqv-view-desc', text: describeView(resolveView(v)) }))
+        row.append(apply)
+        if (!own) return row
+        const acts = h('span', { class: 'pqv-view-acts' })
+        const link = (text, title, onclick, cls = 'pqv-link') => h('button', { class: cls, type: 'button', text, title, onclick })
+        acts.append(
+          link('Update', 'Replace this view with the current columns, filters and sort', () => {
+            const k = savedViews.indexOf(v)
+            if (k < 0) return
+            savedViews[k] = currentView(v.name)
+            const ok = saveViews()
+            updateViewLabel()
+            openViewsPanel(ok ? `Updated '${v.name}'.` : viewStore.error, !ok)
+          }),
+          link('Rename', 'Rename this view', () => {
+            const input = h('input', {
+              class: 'pqv-input', type: 'text', value: v.name, 'aria-label': `New name for ${v.name}`,
+              spellcheck: 'false', autocomplete: 'off', maxlength: '120',
+            })
+            apply.replaceWith(input)
+            acts.hidden = true
+            input.focus()
+            input.select()
+            input.addEventListener('keydown', (e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              const to = input.value.trim()
+              if (!to || to === v.name) return openViewsPanel()
+              if (viewNamed(to)) return fail(`There is already a view called '${to}'.`)
+              const from = v.name
+              v.name = to
+              const ok = saveViews()
+              updateViewLabel()
+              openViewsPanel(ok ? `Renamed '${from}' to '${to}'.` : viewStore.error, !ok)
+            })
+          }),
+          link('Delete', 'Delete this view', () => {
+            acts.textContent = ''
+            acts.append(
+              h('span', { class: 'pqv-view-ask', text: 'Delete?' }),
+              link('Delete', `Delete '${v.name}'`, () => {
+                savedViews = savedViews.filter((s) => s !== v)
+                const ok = saveViews()
+                updateViewLabel()
+                openViewsPanel(ok ? `Deleted '${v.name}'.` : viewStore.error, !ok)
+              }, 'pqv-link pqv-danger'),
+              link('Keep', 'Keep this view', () => openViewsPanel()))
+          }))
+        row.append(acts)
+        return row
+      }
+
+      const list = h('div', { class: 'pqv-views-list' })
+      if (authorViews.length) {
+        list.append(h('div', { class: 'pqv-views-group', text: 'In this report' }))
+        for (const v of authorViews) list.append(item(v, false))
+      }
+      list.append(h('div', { class: 'pqv-views-group', text: 'Saved in this browser' }))
+      for (const v of savedViews) list.append(item(v, true))
+      if (!savedViews.length) {
+        list.append(h('div', {
+          class: 'pqv-views-empty',
+          text: 'None yet. Name the current columns, filters and sort above to come back to them later.',
+        }))
+      }
+      const rBtn = h('button', {
+        class: 'pqv-btn pqv-btn-sm', type: 'button',
+        title: 'Copy pqview_view() code for the current view, to add it to a report with pqview(views = ...)',
+      })
+      rBtn.innerHTML = COPY_ICON + '<span>Copy as R code</span>'
+      rBtn.addEventListener('click', async () => {
+        const ok = await copyText(api.views.rCode())
+        const label = rBtn.querySelector('span')
+        label.textContent = ok ? 'Copied' : 'Copy failed'
+        setTimeout(() => { label.textContent = 'Copy as R code' }, 1500)
+      })
+      const pop = h('div', { class: 'pqv-pop pqv-viewspanel', role: 'dialog', 'aria-label': 'Views' },
+        h('div', { class: 'pqv-pop-title', text: 'Views' }),
+        h('div', { class: 'pqv-views-save' }, nameInput, saveBtn),
+        msg,
+        list,
+        h('div', { class: 'pqv-pop-foot pqv-views-foot' }, rBtn,
+          h('span', { class: 'pqv-opt-note', text: 'A view keeps columns, filters, search, WHERE, sort and counts. Marks are not part of views.' })))
+      grid.openPop(viewsBtn, pop, nameInput)
+    }
+    api.openViewsPanel = openViewsPanel
+    viewsBtn.addEventListener('click', () => {
+      if (grid.pop && grid.pop.anchor === viewsBtn) grid.closePop()
+      else openViewsPanel()
+    })
+
+    const initial = defaultColumns.slice()
     for (const col of restoreMarks()) initial.push(col.name)
+    counts.refreshFields()
     picker.setSelected(initial.filter(hasCol))
+    state.sort = [].concat(x.sort || [])
+      .filter((s) => s && typeof s.name === 'string' && hasCol(s.name))
+      .map((s) => ({ name: s.name, dir: s.dir === 'desc' ? 'desc' : 'asc' }))
     await setSelected(picker.selected())
     for (const col of markers.values()) picker.setChart(col.name, chartFor(col))
     if (queryInput.value.trim()) await runQuery()
+    if (x.counts) {
+      counts.setConfig({ by: [].concat(x.counts) })
+      setCountsOpen(true)
+    }
     recordSoon.cancel()
     history.current = takeSnapshot()
+    updateViewLabel()
     timings.firstTable = performance.now() - t0
 
     // Decode the remaining columns in the background so their stats appear

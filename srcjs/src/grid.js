@@ -303,8 +303,9 @@ export class Grid {
       const parse = (text, isMax) => {
         if (isNum) return parseNumberInput(text)
         const wall = parseDateInput(text, isMax)
-        if (wall === null || wall !== wall) return wall
-        return col.zone ? col.zone.toUtc(wall) : wall
+        if (wall === null || wall !== wall || !col.zone) return wall
+        // An upper bound is the last instant before the next wall-clock moment.
+        return isMax ? col.zone.toUtc(wall + 1) - 1 : col.zone.toUtc(wall)
       }
       const bound = (key, placeholder) => {
         const input = h('input', {

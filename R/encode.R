@@ -143,7 +143,7 @@ frame_to_parquet <- function(df, compression = "gzip") {
   readBin(path, "raw", file.size(path))
 }
 
-# Returns list(bytes, meta, nrow, ncol) for a data frame or a parquet path.
+# Returns list(bytes, meta, nrow, ncol, names) for a data frame or a parquet path.
 # Parquet files the browser can read are embedded as they are; everything
 # else is written with `compression`.
 encode_data <- function(data, rownames = NULL, compression = "gzip") {
@@ -165,7 +165,8 @@ encode_data <- function(data, rownames = NULL, compression = "gzip") {
         bytes = readBin(path, "raw", file.size(path)),
         meta = list(),
         nrow = as.numeric(info$file_meta_data$num_rows),
-        ncol = sum(!is.na(schema$type))
+        ncol = sum(!is.na(schema$type)),
+        names = schema$name[!is.na(schema$type)]
       ))
     }
     # Other codecs and nested columns are rewritten into a form the browser
@@ -186,7 +187,8 @@ encode_data <- function(data, rownames = NULL, compression = "gzip") {
     bytes = frame_to_parquet(prepared$data, compression),
     meta = prepared$meta,
     nrow = nrow(prepared$data),
-    ncol = ncol(prepared$data)
+    ncol = ncol(prepared$data),
+    names = names(prepared$data)
   )
 }
 

@@ -39,6 +39,14 @@ save_pqview(my_data, "my_data.html", title = "My data",
 
 # Start with a query, a proportional font (monospace is the default) and a dark theme
 pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
+
+# Start sorted, with the Counts panel open, and offer prepared views
+pqview(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
+       views = list(
+         "Fuel-efficient" = pqview_view(columns = c("mpg", "cyl", "hp", "wt"),
+                                        where = "mpg > 25", sort = "-mpg"),
+         "By cylinders and gears" = pqview_view(counts = c("cyl", "gear"))
+       ))
 ```
 
 It is an htmlwidget, so it also works in R Markdown and Quarto chunks
@@ -97,6 +105,29 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   expression) and `NOT` toggles.
 - **Sorting.** Click a header to sort; shift-click to add more sort keys.
   Missing values always sort last.
+- **Counts.** The **Counts** button opens a panel above the table with the
+  number and share of filtered rows for each value of one column, or each
+  combination of two. It updates as the filters change.
+  - Dates count by day, month or year; date-times by day, hour, month, year
+    or second, in the column's time zone; numbers by value or in about ten
+    round ranges, chosen to suit the column.
+  - Add a number column to show its mean, median, sum, minimum or maximum per
+    group (for a logical column the mean is the share TRUE).
+  - Click a header to sort; missing values are their own group, listed last.
+  - Click a row to show only that group, or **Exclude** to hide it. Both add
+    a condition to the WHERE query (`region = 'West'`), so the table shows
+    exactly the rows counted, and undo takes it back.
+  - **Copy** and **CSV** give every group, not only those shown.
+- **Views.** **Views** saves the current columns and their order, filters,
+  search, WHERE query, sort and Counts settings under a name, and switches
+  back to any saved view. The button names the view in use, if any.
+  - Views are kept in the reader's browser, for this data.
+  - Views passed from R with `views = list("Name" = pqview_view(...))` are
+    listed under "In this report" for every reader.
+  - **Copy as R code** writes the `pqview_view()` call for the current state,
+    with the column filters and search written as `where`, ready to paste
+    into the `views` argument.
+  - Switching views is an undoable step. Views don't include marker columns.
 - **Marker columns.** **Mark** creates a new column (say `review`) and sets
   a value (`1` unless you type another) on every filtered row; clicking a
   cell in a marker column sets, changes or clears a single row. Marker
@@ -173,6 +204,8 @@ on a laptop with the 30-column demo table:
 | Sort a text column (first time) | ~65 ms | ~0.45 s |
 | Browser memory | ~80 MB | ~390 MB |
 | Redraw while scrolling | < 1 ms | < 1 ms |
+| Counts by a category (adding a mean) | 1-2 ms (~4 ms) | 3-4 ms (~25 ms) |
+| Counts by a text column (first time / after) | 50-70 ms / 8-15 ms | 0.2-0.5 s / 30-40 ms |
 
 ## Limits
 
@@ -190,9 +223,11 @@ on a laptop with the 30-column demo table:
   than gzip or snappy, or that have nested columns, are rewritten on the R
   side first.
 - Date-times are shown in the column's time zone, to the millisecond.
-- The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates.
-- Marks live in the browser that made them (keyed to the data); clearing site
-  data removes them, so export the data to keep them.
+- The query bar filters rows; it has no `SELECT`, `GROUP BY` or aggregates
+  (the Counts panel covers simple grouped counts and statistics).
+- Marks and saved views live in the browser that made them (keyed to the
+  data); clearing site data removes them. Export the data to keep marks, and
+  use **Copy as R code** to put a view into the report itself.
 - Excel sheets hold at most 1,048,575 rows; Excel has no NaN or infinity, so
   those values export as blank cells.
 

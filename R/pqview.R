@@ -23,6 +23,15 @@
 #' @param where Optional initial WHERE condition for the query bar, such as
 #'   `"age > 30 AND region IN ('West', 'South')"`. It is checked in the
 #'   browser, which shows any syntax error.
+#' @param sort Optional columns to sort by at first, in order of priority.
+#'   Prefix a name with `-` for descending order, as in
+#'   `c("region", "-income")`. The columns must be among those shown.
+#' @param counts Optional one or two column names: the **Counts** panel opens
+#'   with the filtered rows counted by these columns.
+#' @param views Optional named list of [pqview_view()] objects, offered in
+#'   the viewer's **Views** menu so readers can switch between prepared
+#'   states of the table, as in
+#'   `list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))`.
 #' @param theme Starting theme: `"auto"` follows the reader's system setting;
 #'   `"light"` and `"dark"` force one. Readers can switch with the toolbar
 #'   button, and their choice is remembered in their browser.
@@ -66,6 +75,18 @@
 #'   missing values (show, hide, only) and how the filter combines with the
 #'   others: AND filters must all match; a row must match at least one OR
 #'   filter.
+#' * **Counts** opens a panel with the number and share of filtered rows for
+#'   each value of one or two columns (dates by day, month or year; numbers by
+#'   value or in ranges), optionally with the mean, median, sum, minimum or
+#'   maximum of a number column. It updates as the filters change. Click a
+#'   row to show only that group, or **Exclude** to hide it; both add a
+#'   condition to the WHERE query, so undo or editing the query reverses
+#'   them. The counts can be copied or saved as CSV.
+#' * **Views** saves the current columns, filters, search, WHERE query, sort
+#'   and Counts settings under a name, in the reader's browser, and switches
+#'   between saved views. Views passed from R with `views` are listed too,
+#'   and **Copy as R code** writes [pqview_view()] code for the current
+#'   state.
 #' * **Mark** adds a marker column and sets a value on every filtered row;
 #'   clicking a marker cell sets one row. Marker columns can be filtered,
 #'   sorted and queried, are saved in the reader's browser, and are included
@@ -91,6 +112,8 @@
 #'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
 #'          notes = "Fisher's iris data, 150 flowers")
 #'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
+#'   pqview(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
+#'          views = list("Heavy" = pqview_view(where = "wt > 4", sort = "-wt")))
 #' }
 #' @export
 pqview <- function(data,
@@ -99,6 +122,9 @@ pqview <- function(data,
                    notes = NULL,
                    digits = 7,
                    where = NULL,
+                   sort = NULL,
+                   counts = NULL,
+                   views = NULL,
                    theme = c("auto", "light", "dark"),
                    font = c("mono", "sans"),
                    top_offset = 56,
@@ -120,7 +146,17 @@ pqview <- function(data,
     is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0
   )
 
+  check_names_arg(sort, "sort")
+  check_names_arg(counts, "counts")
+  if (!is.null(counts) && !length(counts) %in% 1:2) {
+    stop("`counts` takes one or two column names.", call. = FALSE)
+  }
+
   enc <- encode_data(data, rownames = rownames, compression = compression)
+  shown <- if (is.null(columns)) utils::head(enc$names, 10L) else columns
+  sort <- browser_sort(sort, enc$names, shown)
+  if (!is.null(counts)) check_known(counts, enc$names, "counts")
+  views <- browser_views(views, enc$names, shown)
   if (length(enc$bytes) > max_bytes) {
     warning(
       "The embedded data is ", format_bytes(length(enc$bytes)),
@@ -145,6 +181,9 @@ pqview <- function(data,
   notes <- notes[!is.na(notes)]
   if (length(notes)) x$notes <- paste(notes, collapse = "\n")
   if (!is.null(where) && nzchar(trimws(where))) x$where <- where
+  if (length(sort)) x$sort <- sort
+  if (!is.null(counts)) x$counts <- as.list(counts)
+  if (length(views)) x$views <- views
 
   htmlwidgets::createWidget(
     name = "pqview",

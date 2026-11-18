@@ -11,6 +11,9 @@ pqview(
   notes = NULL,
   digits = 7,
   where = NULL,
+  sort = NULL,
+  counts = NULL,
+  views = NULL,
   theme = c("auto", "light", "dark"),
   font = c("mono", "sans"),
   top_offset = 56,
@@ -42,6 +45,18 @@ Exports always keep full precision.}
 \item{where}{Optional initial WHERE condition for the query bar, such as
 \code{"age > 30 AND region IN ('West', 'South')"}. It is checked in the
 browser, which shows any syntax error.}
+
+\item{sort}{Optional columns to sort by at first, in order of priority.
+Prefix a name with \code{-} for descending order, as in
+\code{c("region", "-income")}. The columns must be among those shown.}
+
+\item{counts}{Optional one or two column names: the \strong{Counts} panel opens
+with the filtered rows counted by these columns.}
+
+\item{views}{Optional named list of \code{\link[=pqview_view]{pqview_view()}} objects, offered in
+the viewer's \strong{Views} menu so readers can switch between prepared
+states of the table, as in
+\code{list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))}.}
 
 \item{theme}{Starting theme: \code{"auto"} follows the reader's system setting;
 \code{"light"} and \code{"dark"} force one. Readers can switch with the toolbar
@@ -108,6 +123,18 @@ case sensitivity, "everything but" (invert, missing values included),
 missing values (show, hide, only) and how the filter combines with the
 others: AND filters must all match; a row must match at least one OR
 filter.
+\item \strong{Counts} opens a panel with the number and share of filtered rows for
+each value of one or two columns (dates by day, month or year; numbers by
+value or in ranges), optionally with the mean, median, sum, minimum or
+maximum of a number column. It updates as the filters change. Click a
+row to show only that group, or \strong{Exclude} to hide it; both add a
+condition to the WHERE query, so undo or editing the query reverses
+them. The counts can be copied or saved as CSV.
+\item \strong{Views} saves the current columns, filters, search, WHERE query, sort
+and Counts settings under a name, in the reader's browser, and switches
+between saved views. Views passed from R with \code{views} are listed too,
+and \strong{Copy as R code} writes \code{\link[=pqview_view]{pqview_view()}} code for the current
+state.
 \item \strong{Mark} adds a marker column and sets a value on every filtered row;
 clicking a marker cell sets one row. Marker columns can be filtered,
 sorted and queried, are saved in the reader's browser, and are included
@@ -135,5 +162,7 @@ if (interactive()) {
   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
          notes = "Fisher's iris data, 150 flowers")
   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
+  pqview(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
+         views = list("Heavy" = pqview_view(where = "wt > 4", sort = "-wt")))
 }
 }

@@ -30,6 +30,30 @@ test('time zones convert both ways, across daylight saving', () => {
   assert.equal(chicago.toUtc(chicago.wall(summer)), summer)
 })
 
+test('wall times skipped or repeated by a clock change map to the right instants', () => {
+  const chicago = makeZone('America/Chicago')
+  const H = 3600000
+  // 10 March 2024: 02:00 CST jumps to 03:00 CDT (08:00 UTC).
+  assert.equal(chicago.toUtc(Date.UTC(2024, 2, 10, 1, 30)), Date.UTC(2024, 2, 10, 7, 30))
+  assert.equal(chicago.toUtc(Date.UTC(2024, 2, 10, 2, 30)), Date.UTC(2024, 2, 10, 8))
+  assert.equal(chicago.toUtc(Date.UTC(2024, 2, 10, 3)), Date.UTC(2024, 2, 10, 8))
+  // so 01:00-01:59 is a whole hour
+  const lo = chicago.toUtc(Date.UTC(2024, 2, 10, 1))
+  const hi = chicago.toUtc(Date.UTC(2024, 2, 10, 2)) - 1
+  assert.equal(hi - lo + 1, H)
+  // 3 November 2024: 01:00-01:59 happens twice (CDT, then CST).
+  assert.equal(chicago.toUtc(Date.UTC(2024, 10, 3, 1, 30)), Date.UTC(2024, 10, 3, 6, 30))
+  const lo2 = chicago.toUtc(Date.UTC(2024, 10, 3, 1))
+  const hi2 = chicago.toUtc(Date.UTC(2024, 10, 3, 2)) - 1
+  assert.equal(hi2 - lo2 + 1, 2 * H)
+  // Every wall time maps to an instant with that wall time, or the change after it.
+  for (let m = 0; m < 48 * 60; m += 7) {
+    const w = Date.UTC(2024, 2, 9) + m * 60000
+    const t = chicago.toUtc(w)
+    assert.ok(chicago.wall(t) >= w && chicago.wall(t - 1) < w, `wall ${new Date(w).toISOString()}`)
+  }
+})
+
 test('parseNumberInput', () => {
   assert.equal(parseNumberInput('  '), null)
   assert.equal(parseNumberInput('1,234.5'), 1234.5)

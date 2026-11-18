@@ -49,10 +49,28 @@ export function makeZone(tz) {
     for (const part of fmt.formatToParts(whole)) p[part.type] = +part.value
     return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) + (ms - whole)
   }
+  // The first instant whose wall clock reads wallMs or later. A wall time
+  // repeated when clocks go back gives its first occurrence; one skipped when
+  // clocks go forward gives the moment of the change. So [toUtc(a),
+  // toUtc(b + 1) - 1] covers every instant whose wall time is in [a, b].
+  const offset = (ms) => wall(ms) - ms
   const toUtc = (wallMs) => {
-    let guess = wallMs
-    for (let k = 0; k < 2; k++) guess = wallMs - (wall(guess) - guess)
-    return guess
+    const a = wallMs - offset(wallMs - DAY_MS)
+    const b = wallMs - offset(wallMs + DAY_MS)
+    const okA = wall(a) === wallMs
+    const okB = a === b ? okA : wall(b) === wallMs
+    if (okA && okB) return Math.min(a, b)
+    if (okA) return a
+    if (okB) return b
+    // In the gap: find the change between the two candidates.
+    let lo = Math.min(a, b)
+    let hi = Math.max(a, b)
+    while (hi - lo > 1) {
+      const mid = Math.floor((lo + hi) / 2)
+      if (wall(mid) >= wallMs) hi = mid
+      else lo = mid
+    }
+    return hi
   }
   return { tz, wall, toUtc }
 }
