@@ -82,9 +82,10 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
 
 ## What the page does
 
-- **Title band.** The title and any `notes` sit at the top, with the size
-  of the embedded data and the estimated size of a CSV export of the rows
-  and columns currently shown.
+- **Title band.** The title and any `notes` share one line at the top
+  (long notes are cut short, with a **more** button to show them in full).
+  On the right are the number of rows shown, the size of the embedded data
+  and the estimated size of a CSV export of the rows and columns shown.
 - **Column picker.** Every column is listed with its type and, once read,
   its distinct count, share of missing values, range and a small
   distribution chart (a histogram for numbers and dates, the top values for
@@ -98,8 +99,10 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   in the table (Alt+Up/Down also reorders). Drag the panel's right edge to
   give the list more room (double-click the edge to widen or narrow it).
   **All** and **None** tick or untick every column, whatever is typed in
-  "Find column". While a search is typed, **Add**, **Remove** and **Only**
-  act on just the columns it found.
+  "Find column"; **None** on the "In table" heading and **All** on "Other
+  columns" act on just that group. While a search is typed, the bar
+  "*n* found · All · None · Only" acts on just the columns it found (and the
+  heading links on the found columns in their group).
 - **Per-column filters** under each header: min/max for numbers, from/to for
   dates (`2024`, `2024-03` or `2024-03-15` all work), a checklist for factors
   and low-cardinality text, a text box for other text, and TRUE/FALSE for
@@ -152,7 +155,10 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
     or second, in the column's time zone; numbers by value or in about ten
     round ranges, chosen to suit the column.
   - Add a number column to show its mean, median, sum, minimum or maximum per
-    group (for a logical column the mean is the share TRUE).
+    group (for a logical column the mean is the share TRUE). Its values share
+    one number of decimals so they line up, and **bars** switches the bars
+    between the row counts and these values (negative values extend left).
+  - Drag the edge of a column heading to resize it; double-click to reset.
   - Click a header to sort; missing values are their own group, listed last.
   - Click a row to show only that group, or **Exclude** to hide it. Both add
     a condition to the WHERE query (`region = 'West'`), so the table shows
@@ -183,6 +189,10 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   | Parquet | Snappy-compressed and typed; date-times are stored as UTC instants |
   | Clipboard | Tab-separated with a header row, ready to paste into a spreadsheet |
 
+  **Missing values as** (Empty, NA, NULL or your own text) sets what CSV,
+  Excel and the clipboard write for missing values; R data and parquet keep
+  real missing values.
+
   When a marker column is included, the export starts with a `row` column
   (the original row number) so the marks can be joined back in R:
 
@@ -202,13 +212,16 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   change only how numbers look: filters, search, the row panel and exports
   keep full values. They are part of undo and saved views; `formats =` sets
   them from R.
-- **Switches** for the WHERE bar and See Query in the toolbar. The faint
-  **Mono** and theme buttons at the right of the top band switch the table
-  font (monospace by default) and the theme (auto, light, dark); each
-  reader's choices are remembered in their browser.
-- When the viewer fills a page of its own, it leaves `top_offset` pixels
-  (default 56) above the toolbar, so browser chrome such as Safari's
-  full-screen toolbar does not cover it.
+- **Appearance.** The faint palette button at the right of the top band
+  opens a small window with themes (Auto, which follows the system's light or
+  dark setting, Classic, Modern, Dark, Vintage and Terminal, green on black
+  in monospace) and individual settings: accent colour, table font (mono,
+  sans or serif), text size and row spacing. Each reader's choices are
+  remembered in their browser; `theme =` and `font =` set the starting look
+  from R.
+- When the viewer fills a page of its own, `top_offset` adds that many
+  pixels above it (default 0), for example to clear a fixed toolbar in a
+  browser's full-screen mode.
 
 ### WHERE syntax
 

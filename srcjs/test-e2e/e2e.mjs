@@ -58,9 +58,14 @@ const pqv = page.locator('.pqv')
 const undoBtn = page.locator('.pqv-undo .pqv-btn').nth(0)
 const redoBtn = page.locator('.pqv-undo .pqv-btn').nth(1)
 const step = () => page.waitForTimeout(650)
-const toggleBtn = (text) => (text === 'Mono'
-  ? page.locator('.pqv-prefs .pqv-pref-mono')
-  : page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true }))
+const toggleBtn = (text) => page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true })
+// Picks a choice in the Appearance window, opening it first if needed.
+const lookBtn = page.locator('.pqv-header .pqv-pref')
+const lookPanel = page.locator('.pqv-appearance')
+const pickLook = async (group, value) => {
+  if (!(await lookPanel.isVisible())) await lookBtn.click()
+  await lookPanel.locator(`.pqv-ap-group[aria-label="${group}"] .pqv-ap-choice[data-value="${value}"]`).click()
+}
 const exportAs = async (format) => {
   await page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
   const [d] = await Promise.all([page.waitForEvent('download'), page.locator(`.pqv-export-item[data-format="${format}"]`).click()])
@@ -109,13 +114,14 @@ check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-pinrows .p
 
 // ---- standalone top offset ------------------------------------------------
 const toolbarTop = await page.locator('.pqv-toolbar').evaluate((e) => e.getBoundingClientRect().top)
-check('toolbar sits below the top offset (>= 56px)', toolbarTop >= 56, true)
+check('compact top band: toolbar within 48px of the top', toolbarTop > 20 && toolbarTop <= 48, true)
 check('page marked standalone', await pqv.evaluate((e) => e.classList.contains('pqv-standalone')), true)
 check('monospace font by default', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), true)
-check('room above the title (>= 24px)', await page.locator('.pqv-header .pqv-title').evaluate((e) => e.getBoundingClientRect().top) >= 24, true)
+const titleTop = await page.locator('.pqv-header .pqv-title').evaluate((e) => e.getBoundingClientRect().top)
+check('a little room above the title (4-16px)', titleTop >= 4 && titleTop <= 16, true)
 check('no Wider/Narrower button', await page.locator('.pqv-picker button', { hasText: /Wider|Narrower/ }).count(), 0)
 check('title in the top band', await page.locator('.pqv-header .pqv-title').innerText(), 'Synthetic demo')
-check('notes under the title', /100,000 synthetic records/.test(await page.locator('.pqv-header .pqv-notes').innerText()), true)
+check('notes beside the title', /100,000 synthetic records/.test(await page.locator('.pqv-header .pqv-notes').innerText()), true)
 check('data size shown', /^data\s*\d+(\.\d+)? MB$/i.test((await page.locator('.pqv-sizes .pqv-size').first().innerText()).replace(/\s+/g, ' ')), true)
 if (shots) await page.screenshot({ path: `${shots}/${engine}-01-initial.png` })
 
@@ -516,17 +522,19 @@ await step()
 check('redo deletes it again', await hcell('review').count(), 0)
 
 // ---- column list: All / None, and the found columns ------------------------
-const pact = (text) => page.locator('.pqv-ptop .pqv-link').getByText(text, { exact: true })
+const pact = (text) => page.locator('.pqv-ptop > .pqv-pactions:not(.pqv-pfound) .pqv-link').getByText(text, { exact: true })
+const fact = (text) => page.locator('.pqv-pfound .pqv-link').getByText(text, { exact: true })
 const orderBefore = await headNames()
 await page.locator('.pqv-ptop input').fill('measure')
 check('found bar shows the count', await page.locator('.pqv-pfound .pqv-pcount').innerText(), '10 found')
-await pact('Add').click()
+check('found bar reads count · All · None · Only', (await page.locator('.pqv-pfound').innerText()).replace(/\s+/g, ' ').trim(), '10 found · All · None · Only')
+await fact('All').click()
 await settle()
-check('Add ticks only the found columns', (await headNames()).length, orderBefore.length + 10)
-await pact('Remove').click()
+check('found All ticks only the found columns', (await headNames()).length, orderBefore.length + 10)
+await fact('None').click()
 await settle()
-check('Remove unticks only the found columns', (await headNames()).join('|'), orderBefore.join('|'))
-await pact('Only').click()
+check('found None unticks only the found columns', (await headNames()).join('|'), orderBefore.join('|'))
+await fact('Only').click()
 await settle()
 check('Only leaves just the found columns', (await headNames()).join('|'), Array.from({ length: 10 }, (_, i) => `measure_${String(i + 1).padStart(2, '0')}`).join('|'))
 await pact('All').click()
@@ -706,8 +714,9 @@ await csel('Then by').selectOption('')
 await csel('Value column').selectOption('income')
 await cwait()
 crow = await crows()
-check('mean income per region matches R', sorted(Object.fromEntries(crow.map((r) => [r[0], r[3]]))),
-  sorted(Object.fromEntries(Object.entries(expected.mean_income_region).map(([k, v]) => [k, String(v)]))))
+// R rounds to 7 significant digits; the panel shows every mean with the same decimals
+check('mean income per region matches R', sorted(Object.fromEntries(crow.map((r) => [r[0], num(r[3])]))),
+  sorted(expected.mean_income_region))
 check('value column header', await cpanel.locator('thead th').nth(3).innerText(), 'Mean income')
 await csel('Value column').selectOption('')
 await cwait()
@@ -1043,31 +1052,31 @@ check('Shiny: state', [shinyIn.state.rows_shown, shinyIn.state.rows_total, shiny
 check('Shiny: open row', shinyIn.row, 5)
 check('Shiny: closed row', shinyIn.closed, null)
 
-// ---- theme and mono switches persist across reloads ------------------------
-const themeBtn = page.locator('.pqv-prefs .pqv-pref-icon')
-await themeBtn.click() // auto -> light
-await themeBtn.click() // light -> dark
+// ---- theme and font choices persist across reloads ------------------------
+await pickLook('Theme', 'dark')
 check('theme switched to dark', await pqv.getAttribute('data-theme'), 'dark')
 const bodyBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 check('page background follows the theme', bodyBg !== 'rgb(255, 255, 255)' && bodyBg !== 'rgba(0, 0, 0, 0)', true)
 const monoFont = await page.locator('.pqv-cell').first().evaluate((e) => getComputedStyle(e).fontFamily)
 check('mono font in use', /mono|Menlo|Consolas/i.test(monoFont), true)
-await toggleBtn('Mono').click()
+await pickLook('Font', 'sans')
 await settle()
 const cellFont = await page.locator('.pqv-cell').first().evaluate((e) => getComputedStyle(e).fontFamily)
-check('Mono switch turns it off', /mono|Menlo|Consolas/i.test(cellFont), false)
-if (shots) await page.screenshot({ path: `${shots}/${engine}-04-dark-mono.png` })
+check('Sans font turns monospace off', /mono|Menlo|Consolas/i.test(cellFont), false)
+if (shots) await page.screenshot({ path: `${shots}/${engine}-04-dark-sans.png` })
+await page.keyboard.press('Escape')
 await page.reload()
 await ready(page)
 const storage = await page.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
 if (storage) {
   check('theme remembered after reload', await pqv.getAttribute('data-theme'), 'dark')
-  check('mono choice remembered after reload', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), false)
+  check('font choice remembered after reload', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), false)
 } else {
   console.log('SKIP  preference persistence (storage unavailable for file:// pages in this browser)')
 }
-await themeBtn.click() // dark -> auto
-await toggleBtn('Mono').click()
+await pickLook('Theme', 'auto')
+await pickLook('Font', 'mono')
+await page.keyboard.press('Escape')
 
 // query bar can be hidden with the WHERE switch
 await toggleBtn('WHERE').click()
@@ -1123,6 +1132,555 @@ await npage.goto(url)
 await ready(npage)
 if (shots) await npage.screenshot({ path: `${shots}/${engine}-05-narrow.png` })
 check('no page-level horizontal scroll at 420px', await npage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
+
+// ---- top band, toolbar order and the Appearance window ------------------------
+await page.reload()
+await ready(page)
+const box = (loc) => loc.boundingBox()
+{
+  const searchBox = await box(page.locator('.pqv-toolbar .pqv-search'))
+  const colsBox = await box(page.locator('.pqv-toolbar > .pqv-btn').first())
+  const whereBox = await box(toggleBtn('WHERE'))
+  const fullBox = await box(toggleBtn('See Query'))
+  check('toolbar: Columns starts the toolbar', /^Columns/.test(await page.locator('.pqv-toolbar > .pqv-btn').first().innerText()), true)
+  check('toolbar: Columns, WHERE, See Query left of the search box',
+    colsBox.x + colsBox.width <= whereBox.x && whereBox.x + whereBox.width <= fullBox.x && fullBox.x + fullBox.width <= searchBox.x, true)
+  const rights = await page.locator('.pqv-toolbar button:visible').evaluateAll((els) =>
+    els.map((e) => ({ views: e.classList.contains('pqv-viewsbtn'), right: e.getBoundingClientRect().right })))
+  const maxRight = Math.max(...rights.map((r) => r.right))
+  check('toolbar: Views is the right-most control', rights.find((r) => r.views).right, maxRight)
+  const exportBox = await box(page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }))
+  const undoBox = await box(undoBtn)
+  check('toolbar: undo, Counts, Mark, Export to the right of the search', undoBox.x > searchBox.x + searchBox.width && exportBox.x > undoBox.x, true)
+}
+
+// the row count sits in the top band, left of the data size
+check('row count left the toolbar', await page.locator('.pqv-toolbar .pqv-status').count(), 0)
+const status = page.locator('.pqv-header .pqv-status')
+check('row count in the top band', await status.innerText(), '100,000 rows')
+check('row count keeps role=status', await status.getAttribute('role'), 'status')
+{
+  const sBox = await box(status)
+  const dBox = await box(page.locator('.pqv-sizes .pqv-size').first())
+  check('row count just left of DATA', sBox.x + sBox.width <= dBox.x && dBox.x - (sBox.x + sBox.width) < 40, true)
+  check('row count on the line of the sizes', Math.abs((sBox.y + sBox.height / 2) - (dBox.y + dBox.height / 2)) <= 4, true)
+}
+await page.locator('.pqv-search').fill('Alaska')
+await settle()
+check('row count updates when filtering', await status.innerText(), `${expected.search_alaska.toLocaleString('en-US')} of 100,000 rows`)
+await page.locator('.pqv-search').fill('')
+await settle()
+
+// notes fit on a wide screen: no expand button
+check('notes fit: no expand button', await page.locator('.pqv-notes-more').isVisible(), false)
+
+// the Appearance window
+check('Appearance button labelled', await lookBtn.getAttribute('aria-label'), 'Appearance')
+await lookBtn.click()
+check('Appearance window opens', await lookPanel.isVisible(), true)
+check('Appearance button expanded', await lookBtn.getAttribute('aria-expanded'), 'true')
+check('Appearance window is a dialog', await lookPanel.getAttribute('role'), 'dialog')
+check('focus moves to the chosen theme', await page.evaluate(() => document.activeElement.dataset.value), 'auto')
+{
+  const pBox = await box(lookPanel)
+  const bBox = await box(lookBtn)
+  check('Appearance window sits below its button', pBox.y >= bBox.y + bBox.height, true)
+}
+for (const theme of ['classic', 'modern', 'dark', 'vintage', 'terminal', 'auto']) {
+  await pickLook('Theme', theme)
+  check(`preset ${theme} sets data-theme`, await pqv.getAttribute('data-theme'), theme)
+}
+check('one preset checked', await lookPanel.locator('.pqv-ap-themes [aria-checked="true"]').count(), 1)
+// arrow keys move the theme choice
+await lookPanel.locator('.pqv-ap-themes [aria-checked="true"]').focus()
+await page.keyboard.press('ArrowRight')
+check('arrow key picks the next theme', await pqv.getAttribute('data-theme'), 'classic')
+await pickLook('Theme', 'terminal')
+const toolbarFont = await page.locator('.pqv-toolbar > .pqv-btn').first().evaluate((e) => getComputedStyle(e).fontFamily)
+check('Terminal: toolbar in monospace', /mono|Menlo|Consolas/i.test(toolbarFont), true)
+check('Terminal: font setting disabled', await lookPanel.locator('.pqv-ap-group[aria-label="Font"] .pqv-ap-choice').first().isDisabled(), true)
+check('Terminal: monospace note shown', await lookPanel.locator('.pqv-ap-note').isVisible(), true)
+if (shots) await page.screenshot({ path: `${shots}/${engine}-06-terminal.png` })
+await pickLook('Accent colour', 'pink')
+check('accent colour applied', await pqv.getAttribute('data-accent'), 'pink')
+const pinkDark = await pqv.evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim())
+await pickLook('Theme', 'classic')
+const pinkLight = await pqv.evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim())
+check('accent has a light and a dark shade', pinkDark !== pinkLight && !!pinkLight, true)
+await pickLook('Accent colour', '')
+check('theme default accent', await pqv.getAttribute('data-accent'), null)
+await page.keyboard.press('Escape')
+check('Escape closes the Appearance window', await lookPanel.count(), 0)
+check('focus returns to the Appearance button', await lookBtn.evaluate((e) => e === document.activeElement), true)
+await lookBtn.click()
+await lookBtn.click()
+check('the button closes the window again', await lookPanel.count(), 0)
+await lookBtn.click()
+await page.locator('.pqv-gridwrap').click({ position: { x: 400, y: 300 } })
+check('an outside click closes the window', await lookPanel.count(), 0)
+
+// font, text size and row spacing change the table
+const cellStyle = () => page.locator('.pqv-rows:not(.pqv-pinrows) .pqv-cell').first().evaluate((e) => {
+  const cs = getComputedStyle(e)
+  return { font: cs.fontFamily, size: cs.fontSize, row: e.parentNode.getBoundingClientRect().height }
+})
+const lookBefore = await cellStyle()
+await pickLook('Font', 'serif')
+await pickLook('Text size', 'large')
+await pickLook('Row spacing', 'roomy')
+await settle()
+const lookAfter = await cellStyle()
+check('serif font in the table', /Palatino|Georgia|Iowan|serif/i.test(lookAfter.font) && !/mono/i.test(lookAfter.font), true)
+check('larger text in the table', parseFloat(lookAfter.size) > parseFloat(lookBefore.size), true)
+check('roomy rows are taller', lookAfter.row, 32)
+check('Appearance window stays open while changing settings', await lookPanel.isVisible(), true)
+{
+  const aligned = await page.evaluate(() => {
+    const g = document.querySelector('.pqv').pqview.grid
+    g.scroller.scrollTop = 5000
+    g.render()
+    const pin = g.pinEl.firstChild.getBoundingClientRect().top
+    const row = g.rowsEl.firstChild.getBoundingClientRect().top
+    g.scroller.scrollTop = g.scroller.scrollHeight
+    g.render()
+    const last = g.pinEl.lastChild.firstChild.textContent
+    g.scroller.scrollTop = 0
+    g.render()
+    return { same: Math.abs(pin - row) < 0.5, last }
+  })
+  check('roomy rows: pinned layer stays aligned when scrolling', aligned.same, true)
+  check('roomy rows: scrolling reaches the last row', aligned.last, '100000')
+}
+await pickLook('Text size', 'small')
+await pickLook('Row spacing', 'compact')
+await settle()
+const lookSmall = await cellStyle()
+check('smaller text in the table', parseFloat(lookSmall.size) < parseFloat(lookBefore.size), true)
+check('compact rows are shorter', lookSmall.row, 22)
+if (shots) await page.screenshot({ path: `${shots}/${engine}-07-serif-compact.png` })
+await page.keyboard.press('Escape')
+if (storage) {
+  await page.reload()
+  await ready(page)
+  const kept = await cellStyle()
+  check('font kept after reload', /Palatino|Georgia|Iowan|serif/i.test(kept.font), true)
+  check('text size kept after reload', kept.size, lookSmall.size)
+  check('row spacing kept after reload', kept.row, 22)
+  // saved choices from older versions still count
+  await page.evaluate(() => {
+    for (const k of ['font', 'size', 'density', 'accent']) localStorage.removeItem('pqview.' + k)
+    localStorage.setItem('pqview.theme', 'light')
+    localStorage.setItem('pqview.mono', '0')
+  })
+  await page.reload()
+  await ready(page)
+  check('old theme "light" becomes Classic', await pqv.getAttribute('data-theme'), 'classic')
+  check('old Mono off becomes the sans font', await pqv.getAttribute('data-font'), 'sans')
+}
+await lookBtn.click()
+await lookPanel.locator('.pqv-link', { hasText: 'Reset to defaults' }).click()
+check('reset: theme back to auto', await pqv.getAttribute('data-theme'), 'auto')
+check('reset: font back to mono', await pqv.getAttribute('data-font'), 'mono')
+check('reset: normal row height', (await cellStyle()).row, 26)
+await page.keyboard.press('Escape')
+
+// top_offset from R adds its pixels above the band; the band is always
+// shown, even without a title or notes and outside a page of its own
+{
+  const offset = await page.evaluate(async () => {
+    const el = document.querySelector('.pqv')
+    const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
+    const top = () => el.querySelector('.pqv-toolbar').getBoundingClientRect().top
+    await window.PQView.mount(el, { ...x, top_offset: 0 }).ready
+    const t0 = top()
+    await window.PQView.mount(el, { ...x, top_offset: 40 }).ready
+    const t40 = top()
+    await window.PQView.mount(el, x).ready
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;left:0;top:0;width:700px;height:400px'
+    document.body.append(host)
+    const { title, notes, ...plain } = x
+    await window.PQView.mount(host, plain).ready
+    const header = host.querySelector('.pqv-header')
+    const out = {
+      diff: Math.round(t40 - t0),
+      shown: !!header && header.getBoundingClientRect().height > 0,
+      count: header ? header.querySelector('.pqv-status').textContent : '',
+      standalone: host.classList.contains('pqv-standalone'),
+    }
+    host.pqview.destroy()
+    host.remove()
+    return out
+  })
+  check('top_offset adds its pixels above the band', offset.diff, 40)
+  check('band shown without title or notes, inside a page', offset.shown && !offset.standalone, true)
+  check('band holds the row count there', offset.count, '100,000 rows')
+}
+
+// narrow screens: three toolbar rows, the notes button and the window fit
+{
+  const smallCtx = await browser.newContext({ viewport: { width: 375, height: 812 } })
+  const spage = await smallCtx.newPage()
+  await spage.goto(url)
+  await ready(spage)
+  check('no page-level horizontal scroll at 375px', await spage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true)
+  const top = (sel) => spage.locator(sel).first().evaluate((e) => Math.round(e.getBoundingClientRect().top))
+  const row1 = await top('.pqv-toolbar > .pqv-btn')
+  check('375px: WHERE and See Query on the first row', [await top('.pqv-switches')].every((t) => Math.abs(t - row1) <= 2), true)
+  check('375px: Views on the first row', Math.abs((await top('.pqv-viewsbtn')) - row1) <= 2, true)
+  const row2 = await top('.pqv-searchgroup')
+  const row3 = await top('.pqv-undo')
+  check('375px: search on its own row, actions below', row2 > row1 + 20 && row3 > row2 + 20, true)
+  check('375px: Export on the actions row', Math.abs((await top('.pqv-toolbar .pqv-btn:text("Export")')) - row3) <= 2, true)
+  const overlap = await spage.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('.pqv-toolbar > *, .pqv-header .pqv-status, .pqv-header .pqv-size, .pqv-header .pqv-pref'))
+      .filter((e) => e.offsetParent !== null && !e.classList.contains('pqv-tsep')).map((e) => e.getBoundingClientRect())
+    for (let a = 0; a < els.length; a++) {
+      for (let b = a + 1; b < els.length; b++) {
+        const p = els[a]
+        const q = els[b]
+        if (p.left < q.right - 1 && q.left < p.right - 1 && p.top < q.bottom - 1 && q.top < p.bottom - 1) return true
+      }
+    }
+    return els.some((r) => r.right > window.innerWidth + 0.5)
+  })
+  check('375px: nothing in the band or toolbar overlaps', overlap, false)
+  const more = spage.locator('.pqv-notes-more')
+  check('375px: long notes get an expand button', await more.isVisible(), true)
+  check('expand button starts collapsed', await more.getAttribute('aria-expanded'), 'false')
+  await more.click()
+  check('expand button expands the notes', await more.getAttribute('aria-expanded'), 'true')
+  check('expanded notes wrap', await spage.locator('.pqv-notes').evaluate((e) => getComputedStyle(e).whiteSpace), 'pre-line')
+  check('expand button now says less', await more.innerText(), 'less')
+  await more.click()
+  check('collapses again', await more.getAttribute('aria-expanded'), 'false')
+  await spage.locator('.pqv-header .pqv-pref').click()
+  const pop = await spage.locator('.pqv-appearance').boundingBox()
+  check('375px: Appearance window fits on screen', pop.x >= 0 && pop.x + pop.width <= 375 && pop.y + pop.height <= 812, true)
+  if (shots) await spage.screenshot({ path: `${shots}/${engine}-08-narrow-appearance.png` })
+  await smallCtx.close()
+}
+
+// ---- column list: All / None on the group headings ---------------------------
+{
+  const gsel = page.locator('.pqv-pgroup', { has: page.locator('.pqv-pgroup-link', { hasText: 'None' }) })
+  const gother = page.locator('.pqv-pgroup', { has: page.locator('.pqv-pgroup-link', { hasText: 'All' }) })
+  const selNone = gsel.locator('.pqv-pgroup-link')
+  const otherAll = gother.locator('.pqv-pgroup-link')
+  const findBox = page.locator('.pqv-ptop input')
+  const fileOrder = await page.evaluate(() => document.querySelector('.pqv').pqview.picker.fileOrder.slice())
+  const setCols = async (names) => {
+    await page.evaluate((n) => {
+      const p = document.querySelector('.pqv').pqview
+      p.picker.setSelected(n)
+      p.picker.emit()
+    }, names)
+    await settle()
+  }
+  const pcount = () => page.locator('.pqv-ptop > .pqv-pactions:not(.pqv-pfound) .pqv-pcount').innerText()
+  await findBox.fill('')
+  await setCols(['comment', 'age', 'region'])
+  check('group headings show their links', [await selNone.isVisible(), await otherAll.isVisible()].join(), 'true,true')
+  check('In table None title', await selNone.getAttribute('title'), 'Remove the 3 columns in the table')
+  check('Other All title', await otherAll.getAttribute('title'), `Add the ${fileOrder.length - 3} other columns to the table, in file order`)
+  await selNone.click()
+  await settle()
+  check('In table None empties the table header', (await headNames()).length, 0)
+  check('In table None: picker count updates', await pcount(), `0 of ${fileOrder.length} selected`)
+  check('In table None: every column back in file order', (await pickNames('.pqv-plist .pqv-pgroup-list:not(.pqv-psel)')).join('|'), fileOrder.join('|'))
+  check('headings hide when nothing is in the table', await page.locator('.pqv-pgroup:visible').count(), 0)
+
+  await setCols(['comment', 'age'])
+  await otherAll.click()
+  await settle()
+  const appended = ['comment', 'age'].concat(fileOrder.filter((n) => n !== 'comment' && n !== 'age'))
+  check('Other All appends the others in file order', (await headNames()).join('|'), appended.join('|'))
+  check('Other All: picker count updates', await pcount(), `${fileOrder.length} of ${fileOrder.length} selected`)
+  check('Other columns heading hides when it is empty', await gother.isVisible(), false)
+  check('focus moves to In table None after Other All', await page.evaluate(() => document.activeElement?.textContent), 'None')
+
+  // with a search typed, the links act on just the found columns
+  const base = ['comment', 'age', 'measure_02', 'measure_05', 'region']
+  await setCols(base)
+  await findBox.fill('measure')
+  await settle()
+  check('search: In table None title', await selNone.getAttribute('title'), 'Remove the 2 found columns in the table')
+  check('search: Other All title', await otherAll.getAttribute('title'), 'Add the 8 found columns not in the table, in file order')
+  await selNone.click()
+  await settle()
+  check('search: In table None removes only found columns', (await headNames()).join('|'), 'comment|age|region')
+  check('search: In table heading hides with no found columns in it', await gsel.isVisible(), false)
+  await setCols(['comment', 'measure_04'])
+  await findBox.fill('measure')
+  await settle()
+  await otherAll.click()
+  await settle()
+  const measures = fileOrder.filter((n) => n.startsWith('measure') && n !== 'measure_04')
+  check('search: Other All appends only found columns', (await headNames()).join('|'), ['comment', 'measure_04'].concat(measures).join('|'))
+  check('search: Other All link hides when it would do nothing', await otherAll.isVisible(), false)
+  check('search: other columns untouched', (await headNames()).includes('age'), false)
+
+  // keyboard, and the list keeps its scroll position
+  await findBox.fill('')
+  await setCols(fileOrder.slice(0, 15))
+  const plist = page.locator('.pqv-plist')
+  // scroll into the Other columns group, so its heading is stuck at the top
+  await plist.evaluate((e) => {
+    const head = e.querySelector('.pqv-pgroup-list.pqv-psel + .pqv-pgroup')
+    e.scrollTop = head.getBoundingClientRect().top - e.getBoundingClientRect().top + e.scrollTop + 120
+  })
+  const top0 = await plist.evaluate((e) => e.scrollTop)
+  await otherAll.focus()
+  await page.keyboard.press('Enter')
+  await settle()
+  check('Other All by keyboard', (await headNames()).length, fileOrder.length)
+  check('list keeps its scroll position', Math.abs(await plist.evaluate((e) => e.scrollTop) - top0) <= 30, true)
+  // focus moved to the In table None link, so Enter again removes them all
+  await page.keyboard.press('Enter')
+  await settle()
+  check('In table None by keyboard', (await headNames()).length, 0)
+  check('focus stays in the column list', await page.evaluate(() => !!document.activeElement?.closest('.pqv-picker')), true)
+  check('list does not jump to the top', await plist.evaluate((e) => e.scrollTop) > 0, true)
+  if (shots) await page.screenshot({ path: `${shots}/${engine}-picker-groups.png` })
+}
+
+// ---- counts: bars for the value, resizable columns, shared decimals ---------
+{
+  if (!(await cpanel.isVisible())) await countsBtn.click()
+  await cwait()
+  await csel('Count rows by').selectOption('region')
+  await csel('Value column').selectOption('income')
+  await csel('Statistic').selectOption('mean')
+  await cwait()
+  const barsBox = cpanel.locator('.pqv-counts-bars')
+  const barsOn = () => barsBox.locator('button[aria-pressed="true"]').innerText()
+  // Per row: the group, the value text, the width of the value cell's bar and whether the % cell has one.
+  const vbars = () => cpanel.locator('tbody tr').evaluateAll((trs) => trs.map((tr) => {
+    const bar = tr.querySelector('td.pqv-cv .pqv-cbar')
+    return {
+      label: tr.querySelector('td.pqv-ck').innerText.trim(),
+      value: tr.querySelector('td.pqv-cv').innerText.trim(),
+      w: bar ? bar.getBoundingClientRect().width : null,
+      neg: !!(bar && bar.classList.contains('pqv-cbar-neg')),
+      pctBar: !!tr.querySelector('td.pqv-cp .pqv-cbar'),
+    }
+  }))
+  const decimals = (rows) => Array.from(new Set(rows.map((r) => (r.value.split('.')[1] || '').length)))
+  check('Bars choice shown with a value column', await barsBox.isVisible(), true)
+  check('bars show the value by default', await barsOn(), 'Value')
+  let vb = await vbars()
+  check('value bars: one bar in each value cell, none in %', vb.every((r) => r.w > 0 && !r.pctBar), true)
+  const widest = vb.reduce((a, r) => (r.w > a.w ? r : a)).label
+  const largest = Object.entries(expected.mean_income_region).reduce((a, e) => (e[1] > a[1] ? e : a))[0]
+  check('the widest bar is the group with the largest mean', widest, largest)
+  check('every mean shows the same decimals', decimals(vb).join(), '2')
+  await barsBox.locator('button', { hasText: 'Rows' }).click()
+  vb = await vbars()
+  check('Rows moves the bars back to the % cells', vb.every((r) => r.w === null && r.pctBar), true)
+  check('Rows is pressed', await barsOn(), 'Rows')
+
+  // a saved view keeps the Bars choice
+  await openViews()
+  await vpanel.locator('input[aria-label="View name"]').fill('Bars by rows')
+  await vpanel.locator('.pqv-btn', { hasText: 'Save' }).click()
+  await page.keyboard.press('Escape')
+  await barsBox.locator('button', { hasText: 'Value' }).click()
+  check('Value is pressed again', await barsOn(), 'Value')
+  await applyView('Bars by rows')
+  await cwait()
+  check('a saved view keeps the Bars choice', await barsOn(), 'Rows')
+  check('the view saved bars: rows', await page.evaluate(() => document.querySelector('.pqv').pqview.counts.config().bars), 'rows')
+  await barsBox.locator('button', { hasText: 'Value' }).click()
+
+  // negative statistics: bars diverge from a zero line
+  await csel('Value column').selectOption('score')
+  await csel('Statistic').selectOption('min')
+  await cwait()
+  vb = await vbars()
+  check('a negative minimum gets a bar of its own colour', vb.filter((r) => r.neg).map((r) => r.label).join(), 'South')
+  check('the zero line is drawn in every value cell', await cpanel.locator('td.pqv-cv .pqv-czero').count(), vb.length)
+  check('minimum scores share their decimals', decimals(vb).join(), '4')
+  const south = await crowOf('South').evaluate((tr) => {
+    const bar = tr.querySelector('td.pqv-cv .pqv-cbar').getBoundingClientRect()
+    const zero = tr.querySelector('td.pqv-cv .pqv-czero').getBoundingClientRect()
+    return Math.abs(bar.right - (zero.left + zero.width / 2))
+  })
+  check('the negative bar ends at the zero line', south < 1.5, true)
+  if (shots) await cpanel.screenshot({ path: `${shots}/${engine}-07-counts-negative.png` })
+  await csel('Value column').selectOption('income')
+  await csel('Statistic').selectOption('mean')
+  await cwait()
+
+  // drag the right edge of the Rows header
+  const rowsTh = cpanel.locator('thead th[data-col="count"]')
+  const thWidth = () => rowsTh.evaluate((e) => e.getBoundingClientRect().width)
+  const sortState = () => rowsTh.getAttribute('aria-sort')
+  const sort0 = await sortState()
+  const w0 = await thWidth()
+  const gb = await rowsTh.locator('.pqv-ccol-grip').boundingBox()
+  const gx = gb.x + gb.width / 2
+  const gy = gb.y + gb.height / 2
+  await page.mouse.move(gx, gy)
+  await page.mouse.down()
+  await page.mouse.move(gx + 30, gy, { steps: 3 })
+  await page.mouse.move(gx + 60, gy, { steps: 3 })
+  await page.mouse.up()
+  const w1 = await thWidth()
+  check('dragging a header edge widens that column by the drag', Math.abs(w1 - w0 - 60) <= 2, true)
+  check('the table switches to fixed widths', await cpanel.locator('table.pqv-counts-fixed').count(), 1)
+  check('the handle does not sort', await sortState(), sort0)
+  await query("region != 'West'")
+  await cwait()
+  check('recounted after the filter', (await crows()).length, 3)
+  check('the width survives a recount', Math.round(await thWidth()), Math.round(w1))
+  await cpanel.locator('th button', { hasText: 'Rows' }).click()
+  check('the width survives sorting', Math.round(await thWidth()), Math.round(w1))
+  await rowsTh.locator('.pqv-ccol-grip').focus()
+  await page.keyboard.press('ArrowLeft')
+  check('arrow keys resize too', Math.round(await thWidth()), Math.round(w1) - 10)
+  await rowsTh.locator('.pqv-ccol-grip').dblclick()
+  check('double-click goes back to automatic widths', await cpanel.locator('table.pqv-counts-fixed').count(), 0)
+  await page.mouse.move(gx, gy)
+  await page.mouse.down()
+  await page.mouse.move(gx + 40, gy, { steps: 3 })
+  await page.mouse.up()
+  await csel('Then by').selectOption('enrolled')
+  await cwait()
+  check('widths reset when the columns change', await cpanel.locator('table.pqv-counts-fixed').count(), 0)
+  await csel('Then by').selectOption('')
+  await cwait()
+  await query('')
+}
+
+// ---- export: missing values as ----------------------------------------------
+// RFC 4180 reader that remembers which cells were quoted.
+const parseCSV = (text) => {
+  const rows = []
+  let row = []
+  let cell = ''
+  let quoted = false
+  let inQuotes = false
+  const end = () => {
+    row.push({ v: cell, q: quoted })
+    cell = ''
+    quoted = false
+  }
+  for (let k = 0; k < text.length; k++) {
+    const ch = text[k]
+    if (inQuotes) {
+      if (ch !== '"') cell += ch
+      else if (text[k + 1] === '"') cell += text[++k]
+      else inQuotes = false
+    } else if (ch === '"') {
+      inQuotes = quoted = true
+    } else if (ch === ',') {
+      end()
+    } else if (ch === '\r' && text[k + 1] === '\n') {
+      end()
+      rows.push(row)
+      row = []
+      k++
+    } else {
+      cell += ch
+    }
+  }
+  return rows
+}
+const openExport = () => page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+const setMissing = async (mode, custom) => {
+  await openExport()
+  await page.locator('.pqv-export-na-mode').selectOption(mode)
+  if (custom !== undefined) await page.locator('.pqv-export-na-text').fill(custom)
+  await page.keyboard.press('Escape')
+}
+const csvColumn = async (name) => {
+  const d = await exportAs('csv')
+  const text = readFileSync(await d.path(), 'utf8')
+  const rows = parseCSV(text)
+  const k = rows[0].findIndex((c) => c.v === name)
+  return { text, rows, cells: rows.slice(1).map((r) => r[k]) }
+}
+await page.reload()
+await ready(page)
+await query("region = 'West'")
+const westNulls = await page.evaluate(() => {
+  const api = document.querySelector('.pqv').pqview
+  const nulls = (name) => {
+    const col = api.ds.peek(name)
+    let k = 0
+    for (const i of api.state.view) k += col.isNull[i]
+    return k
+  }
+  return { income: nulls('income'), comment: nulls('comment') }
+})
+check('missing values: West has missing incomes and comments', westNulls.income > 0 && westNulls.comment > 0, true)
+
+await openExport()
+const naSelect = page.locator('.pqv-export-na-mode')
+check('missing values: Empty by default', await naSelect.inputValue(), 'empty')
+check('missing values: select is labelled', await naSelect.evaluate((e) => e.labels[0].textContent), 'Missing values as')
+check('missing values: options', (await naSelect.locator('option').allInnerTexts()).join('|'), 'Empty|NA|NULL|Custom')
+check('missing values: note on R and parquet', /R data and parquet keep real missing values/.test(await page.locator('.pqv-export-na-note').innerText()), true)
+check('missing values: no custom box until Custom', await page.locator('.pqv-export-na-text').isVisible(), false)
+// keyboard: Tab from the last format reaches the select
+await page.locator('.pqv-export-item[data-format="clip"]').focus()
+await page.keyboard.press('Tab')
+check('missing values: select reachable by Tab', await naSelect.evaluate((e) => e === document.activeElement), true)
+await page.keyboard.press('Escape')
+
+await setMissing('NA')
+const estTitle = await page.locator('.pqv-sizes .pqv-size').nth(1).getAttribute('title')
+check('missing values: export estimate knows the setting', /written as "NA"/.test(estTitle), true)
+let naCsv = await csvColumn('income')
+check('missing values NA: CSV rows', naCsv.rows.length - 1, expected.region_exact_west)
+check('missing values NA: missing incomes are NA', naCsv.cells.filter((c) => c.v === 'NA' && !c.q).length, westNulls.income)
+check('missing values NA: no blank incomes', naCsv.cells.filter((c) => c.v === '').length, 0)
+naCsv = await csvColumn('comment')
+check('missing values NA: missing comments are NA', naCsv.cells.filter((c) => c.v === 'NA' && !c.q).length, westNulls.comment)
+check('missing values NA: no blank comments', naCsv.cells.filter((c) => c.v === '').length, 0)
+
+await setMissing('custom', 'n/a, missing')
+await openExport()
+check('missing values: custom box shown for Custom', await page.locator('.pqv-export-na-text').isVisible(), true)
+await page.keyboard.press('Escape')
+const customCsv = await csvColumn('income')
+check('missing values custom: every row has every column', customCsv.rows.every((r) => r.length === customCsv.rows[0].length), true)
+check('missing values custom: quoted because of the comma', customCsv.cells.filter((c) => c.v === 'n/a, missing' && c.q).length, westNulls.income)
+check('missing values custom: raw text quoted', customCsv.text.includes('"n/a, missing"'), true)
+
+if (storage) {
+  await page.reload()
+  await ready(page)
+  await openExport()
+  check('missing values: choice remembered after reload', await naSelect.inputValue(), 'custom')
+  check('missing values: custom text remembered after reload', await page.locator('.pqv-export-na-text').inputValue(), 'n/a, missing')
+  await page.keyboard.press('Escape')
+  await query("region = 'West'")
+} else {
+  console.log('SKIP  missing-value setting persistence (storage unavailable for file:// pages in this browser)')
+}
+
+await setMissing('empty')
+const emptyCsv = await csvColumn('income')
+check('missing values Empty: missing incomes are blank', emptyCsv.cells.filter((c) => c.v === '' && !c.q).length, westNulls.income)
+check('missing values Empty: no NA text', emptyCsv.text.includes('NA,'), false)
+
+// the menu with the setting fits a phone screen
+const phone = await browser.newContext({ viewport: { width: 375, height: 760 } })
+const ppage = await phone.newPage()
+await ppage.goto(url)
+await ready(ppage)
+await ppage.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+await ppage.locator('.pqv-export-na-mode').selectOption('custom')
+const fit = await ppage.evaluate(() => {
+  const r = document.querySelector('.pqv-exportmenu').getBoundingClientRect()
+  const box = document.querySelector('.pqv-export-na-text').getBoundingClientRect()
+  return { inside: r.left >= 0 && r.right <= window.innerWidth, box: box.right <= r.right && box.width >= 40, scroll: document.documentElement.scrollWidth <= window.innerWidth }
+})
+if (shots) await ppage.screenshot({ path: `${shots}/${engine}-06-export-missing-375.png` })
+check('missing values: menu fits at 375px', fit.inside && fit.box, true)
+check('missing values: no horizontal scroll at 375px', fit.scroll, true)
+await phone.close()
 
 check('no console errors', errors.length, 0)
 if (errors.length) console.log(errors.slice(0, 5).join('\n'))

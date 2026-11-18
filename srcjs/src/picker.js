@@ -39,26 +39,42 @@ export class Picker {
     this.search.addEventListener('input', () => this.applySearch())
     // Shown while a search is typed: act on just the columns it found.
     this.foundCount = h('span', { class: 'pqv-pcount' })
+    this.foundAll = h('button', {
+      class: 'pqv-link', type: 'button', text: 'All', 'aria-label': 'All found columns',
+      onclick: () => this.setAll(true, true),
+    })
+    this.foundNone = h('button', {
+      class: 'pqv-link', type: 'button', text: 'None', 'aria-label': 'None of the found columns',
+      onclick: () => this.setAll(false, true),
+    })
+    const sep = () => h('span', { class: 'pqv-psep', 'aria-hidden': 'true', text: '·' })
     this.foundBar = h('div', { class: 'pqv-pactions pqv-pfound', hidden: true },
-      this.foundCount,
+      this.foundCount, sep(), this.foundAll, sep(), this.foundNone, sep(),
       h('button', {
-        class: 'pqv-link', type: 'button', text: 'Add', title: 'Add the found columns to the table',
-        onclick: () => this.setAll(true, true),
-      }),
-      h('button', {
-        class: 'pqv-link', type: 'button', text: 'Remove', title: 'Remove the found columns from the table',
-        onclick: () => this.setAll(false, true),
-      }),
-      h('button', {
-        class: 'pqv-link', type: 'button', text: 'Only', title: 'Show only the found columns in the table',
+        class: 'pqv-link', type: 'button', text: 'Only', 'aria-label': 'Only the found columns',
+        title: 'Show only the found columns in the table',
         onclick: () => this.onlyFound(),
       }))
 
-    this.selHead = h('div', { class: 'pqv-pgroup' })
+    // Group headings carry links that act on just that group (and, while a
+    // search is typed, just the found columns in it).
+    this.selLabel = h('span', { class: 'pqv-pgroup-label' })
+    this.selNone = h('button', {
+      class: 'pqv-link pqv-pgroup-link', type: 'button', text: 'None', 'aria-label': 'None in table',
+      onclick: () => this.groupAction(false, this.selNone),
+    })
+    this.otherLabel = h('span', { class: 'pqv-pgroup-label' })
+    this.otherAll = h('button', {
+      class: 'pqv-link pqv-pgroup-link', type: 'button', text: 'All', 'aria-label': 'All other columns',
+      onclick: () => this.groupAction(true, this.otherAll),
+    })
+    this.selHead = h('div', { class: 'pqv-pgroup' }, this.selLabel, this.selNone)
     this.selList = h('div', { class: 'pqv-pgroup-list pqv-psel' })
-    this.otherHead = h('div', { class: 'pqv-pgroup' })
+    this.otherHead = h('div', { class: 'pqv-pgroup' }, this.otherLabel, this.otherAll)
     this.otherList = h('div', { class: 'pqv-pgroup-list' })
-    this.list = h('div', { class: 'pqv-plist' }, this.selHead, this.selList, this.otherHead, this.otherList)
+    // Focusable from script only, so focus has somewhere to go when the
+    // link that had it disappears.
+    this.list = h('div', { class: 'pqv-plist', tabindex: '-1' }, this.selHead, this.selList, this.otherHead, this.otherList)
     this.list.addEventListener('change', (e) => {
       const name = e.target && e.target.dataset && e.target.dataset.name
       if (name === undefined) return
@@ -254,6 +270,70 @@ export class Picker {
     this.emit()
   }
 
+  /** Listed (not hidden by the search) columns in the table, and not in it. */
+  groupTargets() {
+    const listed = (name) => !this.items.get(name).row.hidden
+    const sel = new Set(this.order)
+    return {
+      inTable: this.order.filter(listed),
+      others: this.fileOrder.filter((name) => !sel.has(name) && listed(name)),
+    }
+  }
+
+  /**
+   * "None" on the In table heading or "All" on the Other columns heading.
+   * Added columns go at the end in file order.
+   */
+  groupAction(add, link) {
+    // Safari does not focus a clicked button; the list (tabindex -1) gets focus instead.
+    const hadFocus = document.activeElement === link || document.activeElement === this.list
+    const { inTable, others } = this.groupTargets()
+    if (add) this.order.push(...others)
+    else {
+      const drop = new Set(inTable)
+      this.order = this.order.filter((name) => !drop.has(name))
+    }
+    this.place()
+    this.emit()
+    // The link hides itself when its group is done; send focus to the other
+    // group's link, or the list, rather than letting it drop to the page.
+    const shown = (el) => !el.hidden && !el.parentElement.hidden
+    if (hadFocus && !shown(link)) {
+      const next = add ? this.selNone : this.otherAll
+      const to = shown(next) ? next : this.list
+      to.focus({ preventScroll: true })
+    }
+  }
+
+  searching() {
+    return !!this.search.value.trim()
+  }
+
+  /** Show, hide and title the group links and headings for the current state. */
+  updateGroups() {
+    const k = this.order.length
+    const total = this.items.size
+    const q = this.searching()
+    const { inTable, others } = this.groupTargets()
+    this.selLabel.textContent = `In table (${k})`
+    this.otherLabel.textContent = `Other columns (${total - k})`
+    // While searching, a heading over no found columns would head nothing.
+    const selShown = q ? inTable.length > 0 : k > 0
+    const otherShown = q ? others.length > 0 : k < total
+    this.selHead.hidden = !selShown
+    this.otherHead.hidden = !selShown || !otherShown
+    this.selNone.hidden = inTable.length === 0
+    this.otherAll.hidden = others.length === 0
+    const n = (m, what) => `${m} ${q ? 'found ' : ''}${what}${m === 1 ? '' : 's'}`
+    this.selNone.title = `Remove the ${n(inTable.length, 'column')} in the table`
+    this.otherAll.title = q
+      ? `Add the ${n(others.length, 'column')} not in the table, in file order`
+      : `Add the ${n(others.length, 'other column')} to the table, in file order`
+    const found = inTable.length + others.length
+    this.foundAll.title = `Add the ${found} found column${found === 1 ? '' : 's'} to the table`
+    this.foundNone.title = `Remove the ${found} found column${found === 1 ? '' : 's'} from the table`
+  }
+
   emit() {
     this.updateCount()
     this.opts.onChange(this.selected())
@@ -261,6 +341,8 @@ export class Picker {
 
   /** Put every item in its group and position. */
   place() {
+    // Moving rows can make the browser re-anchor the scroll position; keep it.
+    const top = this.list.scrollTop
     const sel = new Set(this.order)
     for (const name of this.order) {
       const it = this.items.get(name)
@@ -274,6 +356,7 @@ export class Picker {
       this.otherList.append(it.row)
     }
     this.updateCount()
+    if (this.list.scrollTop !== top) this.list.scrollTop = top
   }
 
   /**
@@ -305,10 +388,7 @@ export class Picker {
     const k = this.order.length
     const total = this.items.size
     this.count.textContent = `${k} of ${total} selected`
-    this.selHead.textContent = `In table (${k})`
-    this.selHead.hidden = k === 0
-    this.otherHead.textContent = k ? `Other columns (${total - k})` : ''
-    this.otherHead.hidden = k === 0 || k === total
+    this.updateGroups()
   }
 
   applySearch() {
@@ -320,6 +400,7 @@ export class Picker {
     }
     this.foundBar.hidden = !q
     this.foundCount.textContent = `${k} found`
+    this.updateGroups()
   }
 
   /** Open or close an item's detail panel. */

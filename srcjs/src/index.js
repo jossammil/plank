@@ -17,6 +17,9 @@ import {
 import { CountsPanel } from './counts.js'
 import { RowDetail } from './detail.js'
 import {
+  readAppearance, defaultAppearance, applyAppearance, appearancePanel, effectiveFont, rowHeight, APPEARANCE_KEYS,
+} from './appearance.js'
+import {
   makeView, normalizeView, viewSignature, parseSaved, serializeSaved, describeView, viewToR, specFromView,
 } from './views.js'
 
@@ -29,16 +32,65 @@ function formatBytes(b) {
   if (b < 1024 * 1024 * 1024) return `${(b / 1048576).toFixed(b < 10485760 ? 2 : 1)} MB`
   return `${(b / 1073741824).toFixed(2)} GB`
 }
+// The notes share the title's line, cut short to fit. When they do not fit,
+// a small button after them shows them in full, keeping their line breaks.
+function notesLine(heading, notes) {
+  const id = 'pqv-notes-' + Math.random().toString(36).slice(2, 8)
+  const text = h('div', { class: 'pqv-notes', id })
+  const more = h('button', { class: 'pqv-notes-more', type: 'button', 'aria-controls': id, hidden: true })
+  heading.append(text, more)
+  const oneLine = notes.replace(/\s*\n\s*/g, ' · ')
+  let open = false
+  const paint = () => {
+    heading.classList.toggle('pqv-notes-open', open)
+    if (heading.parentElement) heading.parentElement.classList.toggle('pqv-header-open', open)
+    text.textContent = open ? notes : oneLine
+    more.innerHTML = `<span>${open ? 'less' : 'more'}</span>${CHEVRON}`
+    more.setAttribute('aria-expanded', String(open))
+    more.title = open ? 'Show the notes on one line' : 'Show the full notes'
+  }
+  const check = () => {
+    if (open) {
+      more.hidden = false
+      text.removeAttribute('title')
+      return
+    }
+    // Measured without the button, which takes some of the room itself.
+    more.hidden = true
+    const cut = text.scrollWidth > text.clientWidth + 1
+    more.hidden = !cut
+    if (cut) text.title = notes
+    else text.removeAttribute('title')
+  }
+  more.addEventListener('click', () => {
+    open = !open
+    paint()
+    check()
+  })
+  paint()
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => check()) : null
+  if (ro) ro.observe(heading)
+  const fonts = typeof document !== 'undefined' && document.fonts
+  if (fonts) {
+    fonts.ready.then(check, () => {})
+    if (fonts.addEventListener) fonts.addEventListener('loadingdone', check)
+  }
+  return {
+    check,
+    destroy: () => {
+      if (ro) ro.disconnect()
+      if (fonts && fonts.removeEventListener) fonts.removeEventListener('loadingdone', check)
+    },
+  }
+}
+
 // Above this many cells, columns are only decoded when selected.
 const BACKGROUND_CELLS = 6e6
-const THEMES = ['auto', 'light', 'dark']
-const THEME_LABEL = { auto: 'Auto (follows system)', light: 'Light', dark: 'Dark' }
 const svg = (body) => `<svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">${body}</svg>`
-const THEME_ICON = {
-  auto: svg('<circle cx="8" cy="8" r="5.5"/><path d="M8 2.5v11a5.5 5.5 0 0 0 0-11z" fill="currentColor" stroke="none"/>'),
-  light: svg('<circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.5M8 13v1.5M1.5 8H3M13 8h1.5M3.4 3.4l1 1M11.6 11.6l1 1M3.4 12.6l1-1M11.6 4.4l1-1"/>'),
-  dark: svg('<path d="M13.5 9.5A5.5 5.5 0 1 1 6.5 2.5a4.5 4.5 0 0 0 7 7z"/>'),
-}
+const PALETTE_ICON = svg('<path d="M8 1.75a6.25 6.25 0 0 0 0 12.5c.85 0 1.35-.55 1.35-1.25 0-.4-.17-.7-.38-.98-.22-.29-.4-.57-.4-.95 0-.75.6-1.3 1.35-1.3h1.55a3.2 3.2 0 0 0 3.18-3.2C14.65 4.3 11.7 1.75 8 1.75z"/>' +
+  '<circle cx="4.9" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="6.9" cy="4.7" r=".95" fill="currentColor" stroke="none"/>' +
+  '<circle cx="10.2" cy="4.9" r=".95" fill="currentColor" stroke="none"/>')
+const CHEVRON = '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
 const QUERY_EXAMPLES = [
   ['age > 30 AND region IN (\'West\', \'South\')', 'Compare numbers, match a list'],
   ['comment LIKE \'%review%\'', 'Text pattern: % any text, _ one character (ignores case)'],
@@ -49,6 +101,15 @@ const QUERY_EXAMPLES = [
   ['income / 1000 >= 50', 'Arithmetic: + - * /'],
   ['"column with spaces" = \'x\'', 'Quote unusual column names with " or `'],
 ]
+
+// How missing values are written in text exports (CSV, clipboard) and Excel.
+const NA_MODES = [
+  { key: 'empty', label: 'Empty', title: 'A blank cell' },
+  { key: 'NA', label: 'NA', title: 'The text NA, as R writes it' },
+  { key: 'NULL', label: 'NULL', title: 'The text NULL, as databases write it' },
+  { key: 'custom', label: 'Custom', title: 'Text of your choice' },
+]
+const NA_CUSTOM_MAX = 24
 
 // Viewer preferences are remembered per browser. Storage can be unavailable
 // (private windows, blocked site data), so every access is guarded.
@@ -66,6 +127,13 @@ function savePref(key, value) {
     // ignore
   }
 }
+function clearPref(key) {
+  try {
+    window.localStorage.removeItem('pqview.' + key)
+  } catch {
+    // ignore
+  }
+}
 
 /**
  * @param {HTMLElement} el container element
@@ -77,24 +145,26 @@ export function mount(el, x) {
   el.textContent = ''
   el.classList.add('pqv')
 
+  const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
+  const systemDark = () => !!(media && media.matches)
+  let look = readAppearance(loadPref, x)
+  applyAppearance(el, look, systemDark())
   const prefs = {
-    theme: THEMES.includes(loadPref('theme')) ? loadPref('theme') : (THEMES.includes(x.theme) ? x.theme : 'auto'),
-    mono: loadPref('mono') === null ? x.font !== 'sans' : loadPref('mono') === '1',
     query: loadPref('query') !== '0',
     full: loadPref('fullQuery') === '1',
     pickerWidth: +loadPref('pickerWidth') || 0,
+    naMode: NA_MODES.some((m) => m.key === loadPref('naText')) ? loadPref('naText') : 'empty',
+    naCustom: (loadPref('naCustom') || '').slice(0, NA_CUSTOM_MAX),
   }
-  el.dataset.theme = prefs.theme
-  el.classList.toggle('pqv-mono', prefs.mono)
 
-  // A widget that fills a page of its own gets breathing room at the top, so
-  // browser chrome (for example Safari in full screen) does not cover the toolbar.
+  // A widget that fills a page of its own gets a little room at the top, plus
+  // top_offset pixels from R where browser chrome (for example Safari in full
+  // screen) would cover the toolbar.
   const standalone = !!el.parentElement && el.parentElement.id === 'htmlwidget_container' &&
     !/[?&]viewer_pane=1/.test(window.location.search)
   const topOffset = Math.max(0, Number(x.top_offset) || 0)
   if (standalone) {
     el.classList.add('pqv-standalone')
-    // The band above the toolbar holds the title, notes and data sizes.
     el.style.setProperty('--pqv-top', topOffset + 'px')
   }
 
@@ -168,13 +238,13 @@ export function mount(el, x) {
     const fullBtn = toggle('See Query', 'Show every filter, search and WHERE condition combined as one query', prefs.full)
     // Display preferences sit quietly in the title band, apart from the
     // controls that change the data shown.
-    const monoBtn = h('button', {
-      class: 'pqv-pref pqv-pref-mono', type: 'button', text: 'Mono', title: 'Monospace font in the table',
-      'aria-pressed': String(!!prefs.mono),
+    const lookBtn = h('button', {
+      class: 'pqv-pref pqv-pref-icon', type: 'button', title: 'Appearance', 'aria-label': 'Appearance',
+      'aria-haspopup': 'dialog', 'aria-expanded': 'false',
     })
-    const themeBtn = h('button', { class: 'pqv-pref pqv-pref-icon', type: 'button' })
+    lookBtn.innerHTML = PALETTE_ICON
 
-    // ---- title band: title, notes and data sizes -------------------------
+    // ---- title band: title, notes, row count and data sizes ----------------
     const dataBytes = bytes.byteLength
     const sizeData = h('div', { class: 'pqv-size' })
     const sizeExport = h('div', { class: 'pqv-size' })
@@ -183,20 +253,25 @@ export function mount(el, x) {
     sizeData.title = `Embedded parquet data: ${dataBytes.toLocaleString()} bytes ` +
       `(${ds.n.toLocaleString()} rows × ${ds.fields.length} columns). This page is about ${formatBytes(pageBytes)}.`
     const notes = x.notes == null ? '' : [].concat(x.notes).join('\n')
+    const heading = h('div', { class: 'pqv-heading' })
+    if (x.title) heading.append(h('div', { class: 'pqv-title', text: x.title, title: x.title }))
+    const notesBox = notes ? notesLine(heading, notes) : null
     const header = h('div', { class: 'pqv-header' },
-      h('div', { class: 'pqv-heading' },
-        x.title ? h('div', { class: 'pqv-title', text: x.title, title: x.title }) : null,
-        notes ? h('div', { class: 'pqv-notes', text: notes }) : null),
+      heading,
       h('div', { class: 'pqv-headright' },
+        status,
         h('div', { class: 'pqv-sizes' }, sizeData, sizeExport),
-        h('div', { class: 'pqv-prefs' }, monoBtn, themeBtn)))
+        h('div', { class: 'pqv-prefs' }, lookBtn)))
     header.classList.toggle('pqv-header-empty', !x.title && !notes)
 
+    // Left: what is shown and how it is chosen. Right: actions, then views.
     const toolbar = h('div', { class: 'pqv-toolbar' },
-      pickerBtn, viewsBtn,
+      pickerBtn,
+      h('div', { class: 'pqv-switches' }, queryBtn, fullBtn),
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
-      status, h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
-      h('div', { class: 'pqv-switches' }, queryBtn, fullBtn))
+      h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
+      h('div', { class: 'pqv-tsep', 'aria-hidden': 'true' }),
+      viewsBtn)
 
     // ---- query bar ------------------------------------------------------
     const queryInput = h('input', {
@@ -334,6 +409,8 @@ export function mount(el, x) {
     }
     api.fullQuery = () => formatFullQuery(currentParts())
 
+    const naText = () => (prefs.naMode === 'custom' ? prefs.naCustom : prefs.naMode === 'empty' ? '' : prefs.naMode)
+
     // ---- estimated export size ---------------------------------------------
     // Measured on a sample of the shown rows, so it stays instant.
     const encoder = new TextEncoder()
@@ -351,7 +428,7 @@ export function mount(el, x) {
       const step = view.length / Math.max(1, k)
       const sample = new Uint32Array(k)
       for (let j = 0; j < k; j++) sample[j] = view[Math.floor(j * step)]
-      const parts = toCSV(cols, sample, { rowNumbers })
+      const parts = toCSV(cols, sample, { rowNumbers, na: naText() })
       const headBytes = encoder.encode(parts[0]).length
       let body = 0
       for (let j = 1; j < parts.length; j++) body += encoder.encode(parts[j]).length
@@ -361,7 +438,8 @@ export function mount(el, x) {
         h('span', { class: 'pqv-size-k', text: 'Export' }),
         h('span', { class: 'pqv-size-v', text: (exact ? '' : '≈ ') + formatBytes(Math.round(est)) }))
       sizeExport.title = `${exact ? '' : 'Estimated '}size of a CSV export: ${view.length.toLocaleString()} rows × ` +
-        `${cols.length + (rowNumbers ? 1 : 0)} columns${exact ? '' : ', measured on a sample of ' + k.toLocaleString() + ' rows'}.`
+        `${cols.length + (rowNumbers ? 1 : 0)} columns${exact ? '' : ', measured on a sample of ' + k.toLocaleString() + ' rows'}` +
+        `, missing values ${naText() ? 'written as ' + JSON.stringify(naText()) : 'left blank'}.`
     }
 
     const searchError = () => (state.searchRegex && state.search.trim()
@@ -431,8 +509,7 @@ export function mount(el, x) {
     })
     api.grid = grid
 
-    // ---- theme ----------------------------------------------------------
-    const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
+    // ---- appearance -------------------------------------------------------
     const paintPage = () => {
       // In a page of its own, match the page background to the widget so
       // overscroll and the top band use the same colour.
@@ -442,35 +519,49 @@ export function mount(el, x) {
         document.body.style.background = bg
       }
     }
-    const applyTheme = () => {
-      el.dataset.theme = prefs.theme
-      const nextTheme = THEMES[(THEMES.indexOf(prefs.theme) + 1) % THEMES.length]
-      themeBtn.innerHTML = THEME_ICON[prefs.theme]
-      themeBtn.title = `Theme: ${THEME_LABEL[prefs.theme]}. Click for ${THEME_LABEL[nextTheme]}.`
-      themeBtn.setAttribute('aria-label', themeBtn.title)
+    let lookPanel = null
+    // Shows a new appearance; the table is measured again when its font, text
+    // size or row height changed.
+    const showLook = (next) => {
+      const metrics = (a) => [effectiveFont(a), a.size, rowHeight(a)].join()
+      const remeasure = metrics(next) !== metrics(look)
+      look = next
+      applyAppearance(el, look, systemDark())
+      if (remeasure) grid.remeasure()
+      paintPage()
+      if (lookPanel) lookPanel.sync()
+      if (notesBox) notesBox.check()
+    }
+    const setLook = (key, value) => {
+      if (look[key] === value) return
+      savePref(key, value)
+      showLook({ ...look, [key]: value })
+    }
+    const resetLook = () => {
+      for (const key of APPEARANCE_KEYS.concat('mono')) clearPref(key)
+      showLook(defaultAppearance(x))
+    }
+    api.appearance = { get: () => ({ ...look }), set: setLook, reset: resetLook }
+    lookBtn.addEventListener('click', () => {
+      if (grid.pop && grid.pop.anchor === lookBtn) {
+        grid.closePop()
+        return
+      }
+      lookPanel = appearancePanel({ get: () => look, set: setLook, reset: resetLook })
+      grid.openPop(lookBtn, lookPanel.el, lookPanel.focusTarget())
+    })
+    const onScheme = () => {
+      applyAppearance(el, look, systemDark())
       paintPage()
     }
-    themeBtn.addEventListener('click', () => {
-      prefs.theme = THEMES[(THEMES.indexOf(prefs.theme) + 1) % THEMES.length]
-      savePref('theme', prefs.theme)
-      applyTheme()
-    })
-    const onScheme = () => paintPage()
     if (media && media.addEventListener) media.addEventListener('change', onScheme)
-    applyTheme()
-
-    monoBtn.addEventListener('click', () => {
-      prefs.mono = !prefs.mono
-      savePref('mono', prefs.mono ? '1' : '0')
-      setPressed(monoBtn, prefs.mono)
-      el.classList.toggle('pqv-mono', prefs.mono)
-      grid.remeasure()
-    })
+    paintPage()
 
     api.destroy = () => {
       grid.destroy()
       document.removeEventListener('keydown', onUndoKey)
       if (media && media.removeEventListener) media.removeEventListener('change', onScheme)
+      if (notesBox) notesBox.destroy()
     }
 
     // ---- stats fill in during idle time ---------------------------------
@@ -1252,7 +1343,7 @@ export function mount(el, x) {
     const runExport = async (key) => {
       const cols = state.cols
       const view = state.view
-      const opts = { rowNumbers: cols.some((c) => c.marker), title: x.title }
+      const opts = { rowNumbers: cols.some((c) => c.marker), title: x.title, na: naText() }
       switch (key) {
         case 'csv':
           download(new Blob(toCSV(cols, view, opts), { type: 'text/csv;charset=utf-8' }), 'csv')
@@ -1275,6 +1366,43 @@ export function mount(el, x) {
       }
     }
     api.runExport = runExport
+
+    // "Missing values as": a select, plus a text box when Custom is chosen.
+    const missingControl = () => {
+      const id = 'pqv-na-' + Math.random().toString(36).slice(2, 8)
+      const select = h('select', {
+        class: 'pqv-input pqv-export-na-mode', id,
+        title: 'How missing values are written in CSV, Excel and clipboard exports',
+      }, ...NA_MODES.map((m) => h('option', { value: m.key, text: m.label, title: m.title })))
+      select.value = prefs.naMode
+      const custom = h('input', {
+        class: 'pqv-input pqv-export-na-text', type: 'text', value: prefs.naCustom, maxlength: String(NA_CUSTOM_MAX),
+        placeholder: 'blank', 'aria-label': 'Text for missing values', title: 'Text written for missing values (empty: a blank cell)',
+        spellcheck: 'false', autocomplete: 'off', hidden: prefs.naMode !== 'custom',
+      })
+      select.addEventListener('change', () => {
+        prefs.naMode = select.value
+        savePref('naText', prefs.naMode)
+        custom.hidden = prefs.naMode !== 'custom'
+        if (!custom.hidden) custom.focus()
+        updateExportSize()
+      })
+      const sizeSoon = debounce(updateExportSize, 200)
+      custom.addEventListener('input', () => {
+        prefs.naCustom = custom.value.slice(0, NA_CUSTOM_MAX)
+        savePref('naCustom', prefs.naCustom)
+        sizeSoon()
+      })
+      // Enter in the text box should not reach anything behind the menu.
+      custom.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') e.preventDefault()
+      })
+      return h('div', { class: 'pqv-export-na' },
+        h('div', { class: 'pqv-export-na-row' },
+          h('label', { class: 'pqv-export-na-label', for: id, text: 'Missing values as' }),
+          select, custom),
+        h('div', { class: 'pqv-export-na-note', text: 'For CSV, Excel and clipboard. R data and parquet keep real missing values.' }))
+    }
     exportBtn.addEventListener('click', () => {
       if (grid.pop && grid.pop.anchor === exportBtn) {
         grid.closePop()
@@ -1316,6 +1444,7 @@ export function mount(el, x) {
       const pop = h('div', { class: 'pqv-pop pqv-exportmenu', role: 'dialog', 'aria-label': 'Export' },
         h('div', { class: 'pqv-pop-title', text: `Export ${rows.toLocaleString()} rows × ${ncol} columns` }),
         list,
+        missingControl(),
         msg)
       grid.openPop(exportBtn, pop, list.querySelector('button'))
     })

@@ -479,10 +479,34 @@ export function excludeCondition(keys, g) {
   return `(${groupCondition(keys, g)}) IS NOT TRUE`
 }
 
-/** Display text for a statistic. */
-export function formatStat(v, col, stat, fmt = null) {
+/**
+ * Decimal places shared by every value of a column of statistics, so their
+ * decimal points line up: enough for each value (the smallest non-zero one
+ * included) to show `digits` significant digits, and no more than any of
+ * them uses, capped at `cap`. 0 when every value is a whole number. null
+ * when a non-zero value is so small that `cap` decimals would leave it fewer
+ * than three significant digits (or show it as 0.000000): each value then
+ * keeps its own significant digits. Missing and infinite values are ignored.
+ */
+export function statDecimals(values, digits = 7, cap = 6) {
+  let d = 0
+  for (const v of values) {
+    if (v === null || !Number.isFinite(v) || Number.isInteger(v)) continue
+    if (Math.abs(v) < 10 ** (2 - cap)) return null
+    const r = +v.toPrecision(digits)
+    while (d < cap && +r.toFixed(d) !== r) d++
+  }
+  return d
+}
+
+/**
+ * Display text for a statistic. `decimals` (from statDecimals) fixes the
+ * decimal places unless the column's own format sets them.
+ */
+export function formatStat(v, col, stat, fmt = null, decimals = null) {
   if (v === null) return 'NA'
   if (col.type === 'boolean' && stat === 'mean') return (v * 100).toFixed(1) + '%'
+  if (decimals !== null && (!fmt || fmt.decimals == null)) fmt = { decimals, big: !!(fmt && fmt.big) }
   return formatNumberAs(v, col.digits || 7, fmt)
 }
 

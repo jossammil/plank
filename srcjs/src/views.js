@@ -71,14 +71,20 @@ export function makeView(name, s) {
   }
 }
 
+// What the bars of the Counts panel measure. Left out when unset, so the
+// panel picks its default.
+const BARS = new Set(['rows', 'value'])
+
 function cleanCounts(c) {
   if (!c || !Array.isArray(c.by) || !c.by.length || typeof c.by[0] !== 'string') return null
-  return {
+  const out = {
     by: c.by.filter((x) => typeof x === 'string' && x).slice(0, 2),
     bins: Array.isArray(c.bins) ? c.bins.slice(0, 2).map((b) => (typeof b === 'string' ? b : null)) : [],
     value: typeof c.value === 'string' && c.value ? c.value : null,
     stat: typeof c.stat === 'string' ? c.stat : 'mean',
   }
+  if (BARS.has(c.bars)) out.bars = c.bars
+  return out
 }
 
 /**

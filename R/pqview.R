@@ -15,9 +15,10 @@
 #'   ten; `character(0)` starts with none selected.
 #' @param title Optional title shown in the band above the toolbar. It is
 #'   also used as the file name for CSV exports.
-#' @param notes Optional small text shown under the title, for notes such as
-#'   the data source or date. A character vector is shown one element per
-#'   line.
+#' @param notes Optional small text shown after the title, for notes such as
+#'   the data source or date. Notes too long for the line are cut short, with
+#'   a **more** button that shows them in full. A character vector is shown
+#'   one element per line when the notes are shown in full.
 #' @param digits Significant digits used to display non-integer numbers.
 #'   Exports always keep full precision.
 #' @param where Optional initial WHERE condition for the query bar, such as
@@ -41,17 +42,19 @@
 #'   the viewer's **Views** menu so readers can switch between prepared
 #'   states of the table, as in
 #'   `list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))`.
-#' @param theme Starting theme: `"auto"` follows the reader's system setting;
-#'   `"light"` and `"dark"` force one. Readers can switch with the toolbar
-#'   button, and their choice is remembered in their browser.
-#' @param font Starting font for the table: `"mono"` (the default) or
-#'   `"sans"`. Readers can switch with the toolbar's Mono button, and their
+#' @param theme Starting colour theme: `"auto"` follows the reader's system
+#'   light or dark setting; `"classic"`, `"modern"`, `"dark"`, `"vintage"`
+#'   (sepia on cream) and `"terminal"` (green on black, all monospace) force
+#'   one. `"light"` is another name for `"classic"`. Readers can switch in
+#'   the Appearance window, and their choice is remembered in their browser.
+#' @param font Starting font for the table: `"mono"` (the default), `"sans"`
+#'   or `"serif"`. Readers can switch in the Appearance window, and their
 #'   choice is remembered in their browser.
-#' @param top_offset Minimum height in pixels of the band above the toolbar
-#'   (title, notes and data sizes) when the viewer fills a page of its own (a
-#'   saved file or a browser tab), so browser chrome such as Safari's
-#'   full-screen toolbar does not cover the toolbar. Elsewhere the band is
-#'   only as tall as its contents. Use `0` for no minimum.
+#' @param top_offset Extra space in pixels above the top band when the viewer
+#'   fills a page of its own (a saved file or a browser tab), for example
+#'   `50` where browser chrome such as Safari's full-screen toolbar would
+#'   cover the toolbar. It is added to the small default gap; elsewhere it is
+#'   not used.
 #' @param rownames Include row names as a first column? `NULL` includes them
 #'   only when the rows are named (as in `mtcars`).
 #' @param compression How the embedded data is compressed. `"gzip"` (the
@@ -67,8 +70,10 @@
 #'
 #' @return An htmlwidget.
 #' @section In the viewer:
-#' * The band at the top shows the title, notes, the size of the embedded data
-#'   and the estimated size of a CSV export of the current rows and columns.
+#' * The band at the top shows the title and notes on one line (**more**
+#'   shows long notes in full), the number of rows shown, the size of the
+#'   embedded data and the estimated size of a CSV export of the current rows
+#'   and columns.
 #' * **Columns** opens a searchable list of every column with its type,
 #'   distinct count, share missing, range and a small distribution chart
 #'   (hover a bar for its counts). The chart darkens the part of each column
@@ -123,8 +128,11 @@
 #'   (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
 #'   or copies them to the clipboard as tab-separated text.
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
-#' * The faint **Mono** and theme buttons at the right of the top band switch
-#'   the table font and the colour theme.
+#' * The faint palette button at the right of the top band opens the
+#'   Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
+#'   or Terminal), an accent colour, the table font (mono, sans or serif),
+#'   text size and row spacing. The choices are remembered in the reader's
+#'   browser.
 #'
 #' @examples
 #' if (interactive()) {
@@ -147,9 +155,9 @@ pqview <- function(data,
                    formats = NULL,
                    counts = NULL,
                    views = NULL,
-                   theme = c("auto", "light", "dark"),
-                   font = c("mono", "sans"),
-                   top_offset = 56,
+                   theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
+                   font = c("mono", "sans", "serif"),
+                   top_offset = 0,
                    rownames = NULL,
                    compression = c("gzip", "snappy"),
                    max_bytes = 50e6,

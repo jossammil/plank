@@ -5,10 +5,11 @@
 import { h } from './dom.js'
 import {
   BINS, STATS, defaultBin, groupKey, countGroups, sortGroups, groupCondition, excludeCondition,
-  formatStat, groupTable,
+  formatStat, statDecimals, groupTable,
 } from './summary.js'
 
 const PAGE = 300
+const MIN_COL = 40
 const VALUE_TAGS = new Set(['int', 'dbl', 'lgl'])
 const STAT_LABEL = Object.fromEntries(STATS)
 
@@ -19,6 +20,36 @@ function pct(count, total) {
   const p = (count / total) * 100
   if (p > 0 && p < 0.1) return '<0.1%'
   return (p >= 99.95 && count < total ? '>99.9' : p.toFixed(1)) + '%'
+}
+
+// The span of a set of statistics with zero inside it, so bars of negative
+// values grow left from a zero line and positive ones right.
+function barScale(groups) {
+  let lo = 0
+  let hi = 0
+  for (const g of groups) {
+    const v = g.value
+    if (v === null || !Number.isFinite(v)) continue
+    if (v < lo) lo = v
+    if (v > hi) hi = v
+  }
+  return { lo, hi, span: hi - lo }
+}
+
+/** A bar for one statistic inside a track the width of its cell. */
+function valueBar(v, { lo, span }) {
+  const track = h('span', { class: 'pqv-ctrack' })
+  if (lo < 0) {
+    const zero = h('span', { class: 'pqv-czero' })
+    zero.style.left = ((-lo / span) * 100).toFixed(2) + '%'
+    track.append(zero)
+  }
+  if (v === null || !Number.isFinite(v) || !span) return track
+  const bar = h('span', { class: v < 0 ? 'pqv-cbar pqv-cbar-neg' : 'pqv-cbar' })
+  bar.style.left = (((Math.min(v, 0) - lo) / span) * 100).toFixed(2) + '%'
+  bar.style.width = ((Math.abs(v) / span) * 100).toFixed(2) + '%'
+  track.append(bar)
+  return track
 }
 
 export class CountsPanel {
@@ -41,13 +72,16 @@ export class CountsPanel {
   constructor(host, opts) {
     this.opts = opts
     this.el = host
-    this.cfg = { by: [null, null], bins: [null, null], value: null, stat: 'mean' }
+    this.cfg = { by: [null, null], bins: [null, null], value: null, stat: 'mean', bars: 'rows' }
     this.sortBy = 'count'
     this.sortDir = 'desc'
     this.limit = PAGE
     this.token = 0
     this.result = null
     this.timings = {}
+    // Column widths the user dragged: { sig, widths: Map(id -> px), set: Set(id) }
+    // where sig names the columns shown. Null while the layout is automatic.
+    this.colW = null
 
     const sel = (label) => h('select', { class: 'pqv-input', 'aria-label': label })
     this.byA = sel('Count rows by')
@@ -57,6 +91,15 @@ export class CountsPanel {
     this.valueSel = sel('Value column')
     this.statSel = sel('Statistic')
     for (const [k, label] of STATS) this.statSel.append(h('option', { value: k, text: label }))
+    const barBtn = (mode, text, title) => h('button', {
+      class: 'pqv-toggle pqv-cbars-opt', type: 'button', text, title, 'data-bars': mode, 'aria-pressed': 'false',
+    })
+    this.barBtns = [
+      barBtn('rows', 'Rows', 'Bars show the number of rows in each group'),
+      barBtn('value', 'Value', 'Bars show the calculated value of each group'),
+    ]
+    this.barsBox = h('span', { class: 'pqv-counts-bars', role: 'group', 'aria-label': 'Bars show', hidden: true },
+      h('span', { class: 'pqv-counts-word', text: 'bars' }), this.barBtns)
     this.info = h('span', { class: 'pqv-counts-info', 'aria-live': 'polite' })
     this.copyBtn = h('button', { class: 'pqv-btn pqv-btn-sm', type: 'button', text: 'Copy', title: 'Copy every group as tab-separated text' })
     this.csvBtn = h('button', { class: 'pqv-btn pqv-btn-sm', type: 'button', text: 'CSV', title: 'Download every group as a CSV file' })
@@ -77,6 +120,7 @@ export class CountsPanel {
         h('span', { class: 'pqv-counts-pick' }, this.byB, this.binB),
         h('span', { class: 'pqv-counts-word', text: 'value' }),
         h('span', { class: 'pqv-counts-pick' }, this.valueSel, this.statSel),
+        this.barsBox,
         this.info,
         h('span', { class: 'pqv-counts-tools' }, this.copyBtn, this.csvBtn, this.closeBtn)),
       this.msg,
@@ -103,11 +147,20 @@ export class CountsPanel {
     this.binA.addEventListener('change', () => { this.cfg.bins[0] = this.binA.value; changed() })
     this.binB.addEventListener('change', () => { this.cfg.bins[1] = this.binB.value; changed() })
     this.valueSel.addEventListener('change', () => {
+      if (!this.cfg.value && this.valueSel.value) this.cfg.bars = 'value'
       this.cfg.value = this.valueSel.value || null
       if (!this.cfg.value && this.sortBy === 'value') this.sortBy = 'count'
       changed()
     })
     this.statSel.addEventListener('change', () => { this.cfg.stat = this.statSel.value; changed() })
+    for (const btn of this.barBtns) {
+      btn.addEventListener('click', () => {
+        if (this.cfg.bars === btn.dataset.bars) return
+        this.cfg.bars = btn.dataset.bars
+        this.render()
+        if (opts.onChange) opts.onChange()
+      })
+    }
     this.more.addEventListener('click', () => {
       this.limit += PAGE
       this.render()
@@ -121,13 +174,24 @@ export class CountsPanel {
     this.csvBtn.addEventListener('click', () => {
       opts.download(new Blob([this.textTable(',')], { type: 'text/csv;charset=utf-8' }))
     })
+    this.table.addEventListener('pointerdown', (e) => {
+      const grip = e.target.closest('.pqv-ccol-grip')
+      if (grip) this.startColResize(e, grip)
+    })
+    this.table.addEventListener('dblclick', (e) => {
+      const grip = e.target.closest('.pqv-ccol-grip')
+      if (grip) this.autoWidth(grip.dataset.col)
+    })
     this.table.addEventListener('click', (e) => {
+      if (e.target.closest('.pqv-ccol-grip')) return
       const tr = e.target.closest('tr[data-g]')
       if (tr) return this.drill(+tr.dataset.g, !!e.target.closest('.pqv-counts-ex'))
       const th = e.target.closest('button[data-sort]')
       if (th) this.sortOn(th.dataset.sort)
     })
     this.table.addEventListener('keydown', (e) => {
+      const grip = e.target.closest('.pqv-ccol-grip')
+      if (grip) return this.gripKey(e, grip)
       const tr = e.target.closest('tr[data-g]')
       if (tr && e.target === tr && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault()
@@ -151,6 +215,7 @@ export class CountsPanel {
       bins: by.map((_, k) => this.cfg.bins[k] || null),
       value: this.cfg.value,
       stat: this.cfg.stat,
+      bars: this.cfg.value ? this.cfg.bars : 'rows',
     }
   }
 
@@ -163,7 +228,9 @@ export class CountsPanel {
       bins: [by[0] ? (c.bins && c.bins[0]) || null : null, by[1] ? (c.bins && c.bins[1]) || null : null],
       value: c.value && has(c.value) ? c.value : null,
       stat: STAT_LABEL[c.stat] ? c.stat : 'mean',
+      bars: 'rows',
     }
+    this.cfg.bars = c.bars === 'rows' || c.bars === 'value' ? c.bars : this.cfg.value ? 'value' : 'rows'
     this.limit = PAGE
     this.refreshFields()
   }
@@ -303,6 +370,7 @@ export class CountsPanel {
     this.msg.hidden = !message
     this.copyBtn.disabled = !r
     this.csvBtn.disabled = !r
+    this.barsBox.hidden = !(r && r.valueCol)
     if (!r) {
       this.info.textContent = ''
       this.shown.textContent = ''
@@ -310,42 +378,157 @@ export class CountsPanel {
       return
     }
     const { keys, groups, total, valueCol, stat } = r
+    const valueBars = !!valueCol && this.cfg.bars === 'value'
+    for (const btn of this.barBtns) btn.setAttribute('aria-pressed', String(btn.dataset.bars === (valueBars ? 'value' : 'rows')))
     this.info.textContent = `${groups.length.toLocaleString()} group${groups.length === 1 ? '' : 's'} · ` +
       `${total.toLocaleString()} row${total === 1 ? '' : 's'}`
+    const cols = [
+      ...keys.map((k, i) => ({ id: `k${i}:${k.col.name}`, label: k.col.name, cls: 'pqv-ck', by: i === 0 ? 'key' : null, title: i === 0 ? 'Sort by the group values' : null })),
+      { id: 'count', label: 'Rows', cls: 'pqv-cn', by: 'count' },
+      { id: 'pct', label: '%', cls: valueBars ? 'pqv-cp pqv-cp-text' : 'pqv-cp' },
+      valueCol ? { id: 'v:' + valueCol.name, label: `${STAT_LABEL[stat]} ${valueCol.name}`, cls: valueBars ? 'pqv-cn pqv-cv pqv-cvbar' : 'pqv-cn pqv-cv', by: 'value' } : null,
+      { id: 'actions', label: '', cls: 'pqv-ca' },
+    ].filter(Boolean)
+    const sig = cols.map((c) => c.id).join('\u0000')
+    if (this.colW && this.colW.sig !== sig) this.colW = null
+    this.colSig = sig
     const arrow = (by) => (this.sortBy === by ? (this.sortDir === 'asc' ? ' ▲' : ' ▼') : '')
-    const th = (text, by, cls, title) => h('th', { class: by ? cls + ' pqv-csort' : cls, scope: 'col', 'aria-sort': this.sortBy === by ? (this.sortDir === 'asc' ? 'ascending' : 'descending') : null },
-      by ? h('button', { type: 'button', 'data-sort': by, title: title || `Sort by ${text}`, text: text + arrow(by) }) : text)
-    const headRow = h('tr', null,
-      keys.map((k, i) => th(k.col.name, i === 0 ? 'key' : null, 'pqv-ck', i === 0 ? 'Sort by the group values' : null)),
-      th('Rows', 'count', 'pqv-cn'),
-      th('%', null, 'pqv-cp'),
-      valueCol ? th(`${STAT_LABEL[stat]} ${valueCol.name}`, 'value', 'pqv-cn') : null,
-      h('th', { class: 'pqv-ca' }))
+    const th = (c) => h('th', {
+      class: c.by ? c.cls + ' pqv-csort' : c.cls, scope: 'col', 'data-col': c.id,
+      'aria-sort': c.by && this.sortBy === c.by ? (this.sortDir === 'asc' ? 'ascending' : 'descending') : null,
+    },
+    c.by ? h('button', { type: 'button', 'data-sort': c.by, title: c.title || `Sort by ${c.label}`, text: c.label + arrow(c.by) }) : c.label,
+    h('span', {
+      class: 'pqv-ccol-grip', 'data-col': c.id, role: 'separator', 'aria-orientation': 'vertical', tabindex: '0',
+      'aria-label': c.label ? `Resize the ${c.label} column` : 'Resize the last column',
+      title: 'Drag to resize this column; double-click for automatic width',
+    }))
+    const headRow = h('tr', null, cols.map(th))
+    const colgroup = h('colgroup', null, cols.map((c) => h('col', { 'data-col': c.id })))
     const body = h('tbody')
     let max = 0
     for (const g of groups) if (g.count > max) max = g.count
+    const fmt = valueCol && this.opts.getFormat ? this.opts.getFormat(valueCol.name) : null
+    const decimals = valueCol ? statDecimals(groups.map((g) => g.value), valueCol.digits || 7) : null
+    const scale = valueBars ? barScale(groups) : null
     const shown = Math.min(groups.length, this.limit)
     for (let j = 0; j < shown; j++) {
       const g = groups[j]
       const label = (k, id) => h('td', { class: id < 0 ? 'pqv-ck pqv-isna' : 'pqv-ck', text: k.label(id) })
-      const bar = h('span', { class: 'pqv-cbar' })
-      bar.style.width = (max ? (g.count / max) * 100 : 0).toFixed(1) + '%'
+      let pctCell
+      if (valueBars) pctCell = h('td', { class: 'pqv-cp pqv-cp-text', text: pct(g.count, total) })
+      else {
+        const bar = h('span', { class: 'pqv-cbar' })
+        bar.style.width = (max ? (g.count / max) * 100 : 0).toFixed(1) + '%'
+        pctCell = h('td', { class: 'pqv-cp' }, bar, h('span', { class: 'pqv-cpv', text: pct(g.count, total) }))
+      }
+      let valueCell = null
+      if (valueCol) {
+        const text = formatStat(g.value, valueCol, stat, fmt, decimals)
+        const cls = 'pqv-cn pqv-cv' + (valueBars ? ' pqv-cvbar' : '') + (g.value === null ? ' pqv-isna' : '')
+        valueCell = valueBars
+          ? h('td', { class: cls }, valueBar(g.value, scale), h('span', { class: 'pqv-cpv', text }))
+          : h('td', { class: cls, text })
+      }
       body.append(h('tr', { 'data-g': String(j), tabindex: '0', title: 'Click to show only this group' },
         label(keys[0], g.a),
         keys[1] ? label(keys[1], g.b) : null,
         h('td', { class: 'pqv-cn', text: g.count.toLocaleString() }),
-        h('td', { class: 'pqv-cp' }, bar, h('span', { class: 'pqv-cpv', text: pct(g.count, total) })),
-        valueCol ? h('td', { class: g.value === null ? 'pqv-cn pqv-isna' : 'pqv-cn', text: formatStat(g.value, valueCol, stat, this.opts.getFormat ? this.opts.getFormat(valueCol.name) : null) }) : null,
+        pctCell,
+        valueCell,
         h('td', { class: 'pqv-ca' }, h('button', {
           class: 'pqv-link pqv-counts-ex', type: 'button', text: 'Exclude', title: 'Hide this group (adds to the WHERE query)',
         }))))
     }
-    this.table.append(h('thead', null, headRow), body)
+    this.table.append(colgroup, h('thead', null, headRow), body)
+    this.applyWidths()
     if (!groups.length) this.msg.textContent = 'No rows match the current filters.'
     this.msg.hidden = !!groups.length
     this.shown.textContent = groups.length > shown ? `Showing ${shown.toLocaleString()} of ${groups.length.toLocaleString()} groups.` : ''
     this.more.hidden = groups.length <= shown
     this.more.textContent = `Show ${Math.min(PAGE, groups.length - shown).toLocaleString()} more`
+  }
+
+  // ---- column widths ----------------------------------------------------------
+
+  /** Fixed widths when the user has resized a column, else the automatic layout. */
+  applyWidths() {
+    const fixed = !!this.colW
+    this.table.classList.toggle('pqv-counts-fixed', fixed)
+    let sum = 0
+    for (const col of this.table.querySelectorAll('col')) {
+      const w = fixed ? this.colW.widths.get(col.dataset.col) : null
+      col.style.width = w ? w + 'px' : ''
+      sum += w || 0
+    }
+    this.table.style.width = fixed ? sum + 'px' : ''
+  }
+
+  /** Widths of the columns as the automatic layout draws them. */
+  autoWidths() {
+    const was = this.colW
+    this.colW = null
+    this.applyWidths()
+    const widths = new Map()
+    for (const th of this.table.querySelectorAll('thead th')) widths.set(th.dataset.col, Math.round(th.getBoundingClientRect().width))
+    this.colW = was
+    this.applyWidths()
+    return widths
+  }
+
+  /** Starts fixed widths from the automatic layout, the first time a column is resized. */
+  fixWidths() {
+    if (!this.colW) this.colW = { sig: this.colSig, widths: this.autoWidths(), set: new Set() }
+    return this.colW
+  }
+
+  setWidth(id, px) {
+    const w = this.fixWidths()
+    w.widths.set(id, Math.max(MIN_COL, Math.round(px)))
+    w.set.add(id)
+    this.applyWidths()
+  }
+
+  /** One column back to its automatic width; all of them once none is set by hand. */
+  autoWidth(id) {
+    if (!this.colW) return
+    this.colW.set.delete(id)
+    if (!this.colW.set.size) this.colW = null
+    else this.colW.widths.set(id, this.autoWidths().get(id))
+    this.applyWidths()
+  }
+
+  startColResize(e, grip) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    e.stopPropagation()
+    const id = grip.dataset.col
+    const x0 = e.clientX
+    const w0 = this.fixWidths().widths.get(id)
+    grip.classList.add('pqv-dragging')
+    const move = (ev) => this.setWidth(id, w0 + ev.clientX - x0)
+    const up = () => {
+      grip.classList.remove('pqv-dragging')
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  // Arrow keys resize the column; Enter or Delete gives it back its automatic width.
+  gripKey(e, grip) {
+    const id = grip.dataset.col
+    const step = e.shiftKey ? 40 : 10
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault()
+      this.setWidth(id, this.fixWidths().widths.get(id) + (e.key === 'ArrowLeft' ? -step : step))
+    } else if (e.key === 'Enter' || e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault()
+      this.autoWidth(id)
+    }
   }
 
   startResize(e) {

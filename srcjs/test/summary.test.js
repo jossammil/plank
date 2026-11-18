@@ -4,7 +4,7 @@ import { buildColumn } from '../src/store.js'
 import { parseQuery, compileQuery, evaluateQuery } from '../src/query.js'
 import { makeMarker, setMarks } from '../src/markers.js'
 import {
-  groupKey, countGroups, sortGroups, groupCondition, excludeCondition, defaultBin, niceStep, groupTable, formatStat,
+  groupKey, countGroups, sortGroups, groupCondition, excludeCondition, defaultBin, niceStep, groupTable, formatStat, statDecimals,
 } from '../src/summary.js'
 
 // A small random data set with every column type, missing values and
@@ -146,6 +146,34 @@ test('statistics per group match a direct calculation', () => {
   for (const g of share) assert.ok(g.value === null || (g.value >= 0 && g.value <= 1))
   assert.equal(formatStat(0.25, cols.flag, 'mean'), '25.0%')
   assert.equal(formatStat(null, cols.income, 'mean'), 'NA')
+})
+
+test('statistics share one number of decimals so their points line up', () => {
+  assert.equal(statDecimals([0.4523, 0.07, 12.3]), 4)
+  assert.equal(statDecimals([62625.4, 62711.03, null, 62359.36]), 2)
+  assert.equal(statDecimals([3, 120, -7, null]), 0)
+  assert.equal(statDecimals([]), 0)
+  assert.equal(statDecimals([Infinity, 2, NaN]), 0)
+  // tiny statistics keep their own significant digits instead of rounding to zero
+  assert.equal(statDecimals([0.0000012345, 0.5]), null)
+  assert.equal(statDecimals([0.000123, 0.5]), 6)
+  // the smallest value keeps its significant digits, up to the cap
+  assert.equal(statDecimals([1 / 3, 1234.5678912]), 6)
+  assert.equal(statDecimals([1 / 3, 1234.5678912], 3), 3)
+  assert.equal(statDecimals([0.000012345], 7, 8), 8)
+  assert.equal(statDecimals([2.5, 1e-12]), null)
+  // significant digits limit large values: 1234567.891 has no decimals at 7 digits
+  assert.equal(statDecimals([1234567.891]), 0)
+
+  const num = { type: 'number', digits: 7 }
+  const shown = [0.4523, 0.07, 12.3].map((v) => formatStat(v, num, 'mean', null, 4))
+  assert.deepEqual(shown, ['0.4523', '0.0700', '12.3000'])
+  assert.equal(formatStat(-0.00001, num, 'mean', null, 2), '0.00')
+  assert.equal(formatStat(1234.5, num, 'sum', { decimals: null, big: true }, 2), '1,234.50')
+  // a format's own decimals win
+  assert.equal(formatStat(1234.5, num, 'sum', { decimals: 0, big: true }, 2), '1,235')
+  assert.equal(formatStat(null, num, 'mean', null, 2), 'NA')
+  assert.equal(formatStat(0.25, { type: 'boolean', digits: 7 }, 'mean', null, 2), '25.0%')
 })
 
 test('sorting by count, key and value; missing groups go last by key', () => {

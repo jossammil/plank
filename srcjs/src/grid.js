@@ -6,7 +6,7 @@ import { cellText } from './store.js'
 import { parseNumberInput, parseDateInput, formatNumberAs } from './format.js'
 import { textError, hasOptions, compileRegex, hasFilter } from './filters.js'
 
-const ROW_H = 26
+const ROW_H = 26 // default row height; the Appearance window can change it
 const OVERSCAN = 6
 // Browsers cap element height (about 17M px in Firefox); beyond this the
 // scroll position is mapped proportionally onto the rows.
@@ -78,6 +78,7 @@ export class Grid {
     this.pop = null
     this.refreshers = new Map()
     this.rowNumW = Math.max(44, 20 + 8 * String(opts.n).length)
+    this.rowH = 0
 
     this.head = h('div', { class: 'pqv-head', role: 'row' })
     this.rowsEl = h('div', { class: 'pqv-rows' })
@@ -152,6 +153,10 @@ export class Grid {
    */
   setColumns(cols, pinCount = 0) {
     this.closePop()
+    this.build(cols, pinCount)
+  }
+
+  build(cols, pinCount) {
     this.cols = cols
     this.pinCount = Math.min(pinCount, cols.length)
     for (const col of cols) {
@@ -183,15 +188,16 @@ export class Grid {
   /** Scroll just enough to show the row at view position `pos`. */
   scrollToRow(pos) {
     const sc = this.scroller
-    const viewH = Math.max(ROW_H, sc.clientHeight - this.head.offsetHeight)
-    const total = this.view.length * ROW_H
+    const rowH = this.rowHeight()
+    const viewH = Math.max(rowH, sc.clientHeight - this.head.offsetHeight)
+    const total = this.view.length * rowH
     const virt = Math.min(total, MAX_SCROLL_H)
     const scaled = total > virt && virt > viewH
     const top = scaled ? (sc.scrollTop / (virt - viewH)) * (total - viewH) : sc.scrollTop
-    const y = pos * ROW_H
+    const y = pos * rowH
     let want
     if (y < top) want = y
-    else if (y + ROW_H > top + viewH) want = y + ROW_H - viewH
+    else if (y + rowH > top + viewH) want = y + rowH - viewH
     else return
     sc.scrollTop = scaled ? (want / (total - viewH)) * (virt - viewH) : want
     this.schedule()
@@ -246,11 +252,34 @@ export class Grid {
     return Math.round(Math.min(MAX_AUTO_W, Math.max(floor, w)))
   }
 
-  /** Re-measure column widths after a font change. */
+  /** Row height in pixels, from the --pqv-row-h custom property. */
+  rowHeight() {
+    if (!this.rowH) {
+      const v = parseFloat(getComputedStyle(this.scroller).getPropertyValue('--pqv-row-h'))
+      if (v > 0) this.rowH = v
+      else return ROW_H // not in the page yet: measure again next time
+    }
+    return this.rowH
+  }
+
+  /**
+   * Re-measure column widths and the row height after a change of font, text
+   * size or row spacing, keeping the same first row in view.
+   */
   remeasure() {
+    const before = this.rowHeight()
+    const firstRow = this.scroller.scrollTop / before
     this.ctx = null
+    this.rowH = 0
     this.widths.clear()
-    this.setColumns(this.cols, this.pinCount)
+    // Header popovers go with the header; others (such as the Appearance
+    // window that made this change) stay open.
+    if (this.pop && this.head.contains(this.pop.anchor)) this.closePop()
+    this.build(this.cols, this.pinCount)
+    this.render() // sizes the canvas for the new row height
+    const after = this.rowHeight()
+    if (after !== before) this.scroller.scrollTop = Math.round(firstRow * after)
+    this.schedule()
   }
 
   layout() {
@@ -761,7 +790,8 @@ export class Grid {
     const headH = this.head.offsetHeight
     this.empty.style.top = headH + 'px'
     const viewH = Math.max(0, scroller.clientHeight - headH)
-    const total = n * ROW_H
+    const rowH = this.rowHeight()
+    const total = n * rowH
     const virt = Math.min(total, MAX_SCROLL_H)
     if (this.virt !== virt) {
       this.canvas.style.height = virt + 'px'
@@ -771,8 +801,8 @@ export class Grid {
     const st = scroller.scrollTop
     let top = st
     if (total > virt && virt > viewH) top = (st / (virt - viewH)) * (total - viewH)
-    const first = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN)
-    const last = cols.length ? Math.min(n, Math.ceil((top + viewH) / ROW_H) + OVERSCAN) : 0
+    const first = Math.max(0, Math.floor(top / rowH) - OVERSCAN)
+    const last = cols.length ? Math.min(n, Math.ceil((top + viewH) / rowH) + OVERSCAN) : 0
 
     // Visible column window. Layout column 0 is the row number; it and the
     // pinned columns (1..pinCount) are drawn on the pinned layer.
@@ -802,7 +832,7 @@ export class Grid {
       this.rowsEl.style.width = Math.max(0, lefts[c1 + 1] - lefts[c0]) + 'px'
       this.pinEl.style.width = pinW + 'px'
     }
-    const y = st - (top - first * ROW_H)
+    const y = st - (top - first * rowH)
     this.rowsEl.style.transform = `translate(${lefts[c0]}px, ${y}px)`
     this.pinEl.style.transform = `translate(${x0}px, ${y}px)`
     this.pinEl.classList.toggle('pqv-pinshadow', x0 > 0)

@@ -16,9 +16,9 @@ pqview(
   formats = NULL,
   counts = NULL,
   views = NULL,
-  theme = c("auto", "light", "dark"),
-  font = c("mono", "sans"),
-  top_offset = 56,
+  theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
+  font = c("mono", "sans", "serif"),
+  top_offset = 0,
   rownames = NULL,
   compression = c("gzip", "snappy"),
   max_bytes = 5e+07,
@@ -37,9 +37,10 @@ ten; \code{character(0)} starts with none selected.}
 \item{title}{Optional title shown in the band above the toolbar. It is
 also used as the file name for CSV exports.}
 
-\item{notes}{Optional small text shown under the title, for notes such as
-the data source or date. A character vector is shown one element per
-line.}
+\item{notes}{Optional small text shown after the title, for notes such as
+the data source or date. Notes too long for the line are cut short, with
+a \strong{more} button that shows them in full. A character vector is shown
+one element per line when the notes are shown in full.}
 
 \item{digits}{Significant digits used to display non-integer numbers.
 Exports always keep full precision.}
@@ -71,19 +72,21 @@ the viewer's \strong{Views} menu so readers can switch between prepared
 states of the table, as in
 \code{list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))}.}
 
-\item{theme}{Starting theme: \code{"auto"} follows the reader's system setting;
-\code{"light"} and \code{"dark"} force one. Readers can switch with the toolbar
-button, and their choice is remembered in their browser.}
+\item{theme}{Starting colour theme: \code{"auto"} follows the reader's system
+light or dark setting; \code{"classic"}, \code{"modern"}, \code{"dark"}, \code{"vintage"}
+(sepia on cream) and \code{"terminal"} (green on black, all monospace) force
+one. \code{"light"} is another name for \code{"classic"}. Readers can switch in
+the Appearance window, and their choice is remembered in their browser.}
 
-\item{font}{Starting font for the table: \code{"mono"} (the default) or
-\code{"sans"}. Readers can switch with the toolbar's Mono button, and their
+\item{font}{Starting font for the table: \code{"mono"} (the default), \code{"sans"}
+or \code{"serif"}. Readers can switch in the Appearance window, and their
 choice is remembered in their browser.}
 
-\item{top_offset}{Minimum height in pixels of the band above the toolbar
-(title, notes and data sizes) when the viewer fills a page of its own (a
-saved file or a browser tab), so browser chrome such as Safari's
-full-screen toolbar does not cover the toolbar. Elsewhere the band is
-only as tall as its contents. Use \code{0} for no minimum.}
+\item{top_offset}{Extra space in pixels above the top band when the viewer
+fills a page of its own (a saved file or a browser tab), for example
+\code{50} where browser chrome such as Safari's full-screen toolbar would
+cover the toolbar. It is added to the small default gap; elsewhere it is
+not used.}
 
 \item{rownames}{Include row names as a first column? \code{NULL} includes them
 only when the rows are named (as in \code{mtcars}).}
@@ -119,8 +122,10 @@ also be placed in R Markdown and Quarto documents, used in Shiny with
 \section{In the viewer}{
 
 \itemize{
-\item The band at the top shows the title, notes, the size of the embedded data
-and the estimated size of a CSV export of the current rows and columns.
+\item The band at the top shows the title and notes on one line (\strong{more}
+shows long notes in full), the number of rows shown, the size of the
+embedded data and the estimated size of a CSV export of the current rows
+and columns.
 \item \strong{Columns} opens a searchable list of every column with its type,
 distinct count, share missing, range and a small distribution chart
 (hover a bar for its counts). The chart darkens the part of each column
@@ -175,8 +180,11 @@ bring back a column (and its filter) that was unticked by mistake.
 (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
 or copies them to the clipboard as tab-separated text.
 \item The search box has regular-expression (\verb{.*}) and \code{NOT} toggles.
-\item The faint \strong{Mono} and theme buttons at the right of the top band switch
-the table font and the colour theme.
+\item The faint palette button at the right of the top band opens the
+Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
+or Terminal), an accent colour, the table font (mono, sans or serif),
+text size and row spacing. The choices are remembered in the reader's
+browser.
 }
 }
 

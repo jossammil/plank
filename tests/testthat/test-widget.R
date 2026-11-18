@@ -56,13 +56,25 @@ test_that("query, font, theme and offset options reach the browser", {
   d <- pqview(iris)
   expect_null(d$x$where)
   expect_identical(d$x$font, "mono")
-  expect_equal(d$x$top_offset, 56)
+  expect_identical(d$x$theme, "auto")
+  expect_equal(d$x$top_offset, 0)
   expect_null(pqview(iris, where = "  ")$x$where)
 
   expect_error(pqview(iris, font = "comic"))
   expect_error(pqview(iris, compression = "zstd"))
   expect_error(pqview(iris, where = c("a", "b")))
   expect_error(pqview(iris, top_offset = -1))
+})
+
+test_that("every theme and font is accepted", {
+  for (theme in c("auto", "classic", "modern", "dark", "vintage", "terminal", "light")) {
+    expect_identical(pqview(iris, theme = theme)$x$theme, theme)
+  }
+  for (font in c("mono", "sans", "serif")) {
+    expect_identical(pqview(iris, font = font)$x$font, font)
+  }
+  expect_error(pqview(iris, theme = "sepia"))
+  expect_error(pqview(iris, font = "cursive"))
 })
 
 test_that("notes are passed as one string, one line per element", {

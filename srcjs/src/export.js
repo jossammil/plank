@@ -3,7 +3,7 @@
 // browser; CSV lives in csv.js.
 
 import { parquetWriteBuffer } from 'hyparquet-writer'
-import { cellValue, rowColumnName } from './csv.js'
+import { cellValue, rowColumnName, missingText } from './csv.js'
 
 const DAY_MS = 86400000
 
@@ -41,6 +41,7 @@ const tsvQuote = (s) => (TSV_QUOTE.test(s) ? '"' + s.replace(/"/g, '""') + '"' :
 /** Tab-separated text with a header row, as spreadsheets expect on paste. */
 export function toTSV(cols, view, opts = {}) {
   const ecols = exportColumns(cols, opts.rowNumbers)
+  const naCell = tsvQuote(missingText(opts))
   const lines = [ecols.map((c) => tsvQuote(c.name)).join('\t')]
   for (let r = 0; r < view.length; r++) {
     const i = view[r]
@@ -48,7 +49,7 @@ export function toTSV(cols, view, opts = {}) {
     for (let c = 0; c < ecols.length; c++) {
       if (c) line += '\t'
       const col = ecols[c]
-      line += col.rowNumber ? String(i + 1) : tsvQuote(cellValue(col, i))
+      line += col.rowNumber ? String(i + 1) : col.isNull[i] ? naCell : tsvQuote(cellValue(col, i))
     }
     lines.push(line)
   }
@@ -161,11 +162,14 @@ function sheetName(title) {
 /**
  * An .xlsx workbook with one sheet: a bold, frozen header row with filter
  * buttons, numbers as numbers, dates and date-times as Excel dates (in the
- * column's time zone), logicals as TRUE/FALSE and missing values as blanks.
+ * column's time zone), logicals as TRUE/FALSE and missing values as blanks,
+ * or as text cells holding opts.na when that is given.
  */
 export async function toXLSX(cols, view, opts = {}) {
   if (view.length > XLSX_MAX_ROWS) throw new Error(`Excel sheets hold at most ${XLSX_MAX_ROWS.toLocaleString()} rows.`)
   const ecols = exportColumns(cols, opts.rowNumbers)
+  const na = missingText(opts)
+  const naXml = xmlEscape(na)
   const enc = new TextEncoder()
   const letters = ecols.map((_, k) => colLetter(k))
   const chunks = []
@@ -200,7 +204,10 @@ export async function toXLSX(cols, view, opts = {}) {
         buf += `<c r="${ref}"><v>${i + 1}</v></c>`
         continue
       }
-      if (col.isNull[i]) continue
+      if (col.isNull[i]) {
+        if (na) buf += `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${naXml}</t></is></c>`
+        continue
+      }
       switch (col.type) {
         case 'number': {
           const v = col.num[i]

@@ -82,6 +82,19 @@ test('saved views round-trip through JSON and bad entries are dropped', () => {
   assert.deepEqual(parseSaved('null'), [])
 })
 
+test('the Counts bars choice is kept when valid and dropped otherwise', () => {
+  const counts = (bars) => makeView('B', state({ counts: { by: ['region'], value: 'age', stat: 'mean', bars } })).counts
+  assert.equal(counts('value').bars, 'value')
+  assert.equal(counts('rows').bars, 'rows')
+  assert.equal('bars' in counts('sideways'), false)
+  assert.equal('bars' in counts(undefined), false)
+  assert.equal('bars' in counts(1), false)
+  const back = parseSaved(serializeSaved([makeView('B', state({ counts: { by: ['region'], value: 'age', bars: 'rows' } }))]))
+  assert.equal(back[0].counts.bars, 'rows')
+  assert.equal(normalizeView({ name: 'x', counts: { by: ['region'], bars: 'value' } }).counts.bars, 'value')
+  assert.equal('bars' in normalizeView({ name: 'x', counts: 'region' }).counts, false)
+})
+
 test('views from R: missing parts get defaults; scalars become lists', () => {
   const v = normalizeView({ name: ' West ', where: "region = 'West'", sort: { name: 'age', dir: 'desc' }, counts: 'region' })
   assert.equal(v.name, 'West')

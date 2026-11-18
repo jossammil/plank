@@ -28,9 +28,27 @@ export function cellValue(col, i) {
   }
 }
 
-function csvCell(col, i) {
+// Missing-value text is quoted like any other text, and also when it has
+// leading or trailing spaces, which some readers would otherwise trim.
+const EDGE_SPACE = /^\s|\s$/
+
+/** CSV cell for missing values written as `na` ('' for a blank cell). */
+export function csvMissing(na) {
+  return NEEDS_QUOTE.test(na) || EDGE_SPACE.test(na) ? '"' + na.replace(/"/g, '""') + '"' : na
+}
+
+/** The text a missing value is written as: opts.na, or '' (a blank cell). */
+export function missingText(opts = {}) {
+  return typeof opts.na === 'string' ? opts.na : ''
+}
+
+function csvCell(col, i, na, naCell) {
+  if (col.isNull[i]) return naCell
   const v = cellValue(col, i)
-  return col.type === 'category' || col.type === 'string' ? quote(v) : v
+  if (col.type !== 'category' && col.type !== 'string') return v
+  // Text that reads the same as the missing-value text is quoted, so readers
+  // that honour quotes can tell it from a missing value.
+  return na !== '' && v === na ? '"' + v.replace(/"/g, '""') + '"' : quote(v)
 }
 
 /** Name for the leading row-number column that does not clash with `names`. */
@@ -43,11 +61,14 @@ export function rowColumnName(names) {
 /**
  * @param {object[]} cols columns to write, in order
  * @param {Uint32Array} view row indices to write, in order
- * @param {object} [opts] { rowNumbers: add a leading column with the 1-based original row number }
+ * @param {object} [opts] { rowNumbers: add a leading column with the 1-based original row number,
+ *   na: text written for missing values (default '', a blank cell) }
  * @returns {string[]} chunks of CSV text (pass straight to a Blob)
  */
 export function toCSV(cols, view, opts = {}) {
   const rowNumbers = !!opts.rowNumbers
+  const na = missingText(opts)
+  const naCell = csvMissing(na)
   const names = cols.map((c) => c.name)
   const rowName = rowColumnName(names)
   const parts = [(rowNumbers ? [rowName, ...names] : names).map(quote).join(',') + '\r\n']
@@ -59,7 +80,7 @@ export function toCSV(cols, view, opts = {}) {
     let line = rowNumbers ? String(i + 1) : ''
     for (let c = 0; c < k; c++) {
       if (c || rowNumbers) line += ','
-      line += csvCell(cols[c], i)
+      line += csvCell(cols[c], i, na, naCell)
     }
     buf.push(line)
     if (buf.length === CHUNK) {
