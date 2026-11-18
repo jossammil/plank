@@ -10,6 +10,10 @@ shared drive, and needs no R session, server or internet connection.
 
 ![pqview showing a filtered 100,000-row table](man/figures/pqview.png)
 
+To try it without R, download
+[`examples/sample.pqv.html`](examples/sample.pqv.html) (10,000 synthetic
+rows, about 1 MB; use **Download raw file** on that page) and double-click it.
+
 ## Install
 
 On any machine with R 4.2 or later (macOS, Windows or Linux):
@@ -292,6 +296,7 @@ npm run build    # rebuild the bundle
 ```r
 devtools::test()                      # R tests
 source("examples/make-demo.R")        # writes examples/demo.html (100k x 30)
+source("examples/make-sample.R")      # writes examples/sample.pqv.html (10k x 30, kept in git)
 ```
 
 End-to-end tests drive the demo page in a real browser and compare every
