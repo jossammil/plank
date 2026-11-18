@@ -3,7 +3,7 @@
 
 import { h } from './dom.js'
 import { cellText } from './store.js'
-import { parseNumberInput, parseDateInput } from './format.js'
+import { parseNumberInput, parseDateInput, formatNumberAs } from './format.js'
 import { textError, hasOptions, compileRegex, hasFilter } from './filters.js'
 
 const ROW_H = 26
@@ -58,6 +58,8 @@ export class Grid {
    * @param {(col: object, row: number, cell: HTMLElement) => void} [opts.onMarkCell] click on a marker cell
    * @param {(row: number, onNumber: boolean) => void} [opts.onRowClick] click on a row (onNumber: on its row number)
    * @param {(name: string) => void} [opts.onPin] pin or unpin a column
+   * @param {(name: string) => object|null} [opts.getFormat] display format of a number column
+   * @param {(name: string, fmt: object|null) => void} [opts.onFormat] the display format was changed
    */
   constructor(host, opts) {
     this.opts = opts
@@ -222,11 +224,18 @@ export class Grid {
     return this.ctx.measureText(text).width
   }
 
+  /** Cell text as displayed, with the column's number format if it has one. */
+  displayCell(col, i, fmt) {
+    if (fmt && col.type === 'number' && !col.isNull[i]) return formatNumberAs(col.num[i], col.digits, fmt)
+    return cellText(col, i)
+  }
+
   autoWidth(col) {
     let w = this.measure(col.name) * 1.08 + 36
     const sample = Math.min(col.n, 200)
+    const fmt = this.opts.getFormat ? this.opts.getFormat(col.name) : null
     for (let i = 0; i < sample; i++) {
-      const t = cellText(col, i)
+      const t = this.displayCell(col, i, fmt)
       if (t !== null) {
         const tw = this.measure(t.length > 80 ? t.slice(0, 80) : t) + 20
         if (tw > w) w = tw
@@ -575,6 +584,30 @@ export class Grid {
     } else {
       sections.push(h('div', { class: 'pqv-opt-note', text: 'No missing values in this column.' }))
     }
+    if (col.type === 'number' && this.opts.onFormat) {
+      // How numbers are shown; filters and exports are not affected.
+      const fmt = this.opts.getFormat(col.name) || { decimals: null, big: false }
+      const dec = h('select', { class: 'pqv-input', 'aria-label': `${col.name} decimals` },
+        h('option', { value: '', text: 'Auto' }),
+        [0, 1, 2, 3, 4, 5, 6].map((d) => h('option', { value: String(d), text: String(d) })))
+      dec.value = fmt.decimals == null ? '' : String(fmt.decimals)
+      const big = h('input', { type: 'checkbox' })
+      big.checked = !!fmt.big
+      const changed = () => {
+        const next = { decimals: dec.value === '' ? null : +dec.value, big: big.checked }
+        this.opts.onFormat(col.name, next.decimals == null && !next.big ? null : next)
+        // Redraw the column, widening it if the numbers grew.
+        this.widths.set(col.name, Math.max(this.widths.get(col.name) || 0, this.autoWidth(col)))
+        this.layout()
+        this.schedule()
+      }
+      dec.addEventListener('change', changed)
+      big.addEventListener('change', changed)
+      sections.push(h('fieldset', { class: 'pqv-opt-group pqv-opt-format' },
+        h('legend', { text: 'Display' }),
+        h('label', { class: 'pqv-opt-item' }, h('span', { text: 'Decimals' }), dec),
+        h('label', { class: 'pqv-opt-item pqv-opt-check' }, big, h('span', { text: 'Thousands separator (1,234)' }))))
+    }
     const reset = h('button', {
       class: 'pqv-link', type: 'button', text: 'Reset options',
       onclick: () => {
@@ -705,7 +738,8 @@ export class Grid {
       cell.append(text)
       el.append(cell)
       if (col && col.marker) cell._col = col
-      cells.push({ cell, text, col, na: false, mark: !!(col && col.marker) })
+      const fmt = col && col.type === 'number' && this.opts.getFormat ? this.opts.getFormat(col.name) : null
+      cells.push({ cell, text, col, fmt, na: false, mark: !!(col && col.marker) })
     }
   }
 
@@ -815,7 +849,7 @@ export class Grid {
           continue
         }
         if (c.mark) c.cell._row = i
-        const t = cellText(c.col, i)
+        const t = c.fmt ? this.displayCell(c.col, i, c.fmt) : cellText(c.col, i)
         const na = t === null
         if (c.na !== na) {
           c.cell.classList.toggle('pqv-isna', na)

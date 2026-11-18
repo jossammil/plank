@@ -13,6 +13,7 @@ pqview(
   where = NULL,
   sort = NULL,
   pin = NULL,
+  formats = NULL,
   counts = NULL,
   views = NULL,
   theme = c("auto", "light", "dark"),
@@ -54,6 +55,13 @@ Prefix a name with \code{-} for descending order, as in
 \item{pin}{Optional columns to pin at first: they move to the left of the
 table and stay in view when scrolling sideways. They must be among those
 shown. Readers pin and unpin with the pin button in each header.}
+
+\item{formats}{Optional display formats for number columns: a named list
+with, for each column, \code{decimals} (a fixed number of decimal places) and
+\code{big_mark} (\code{TRUE} for a comma between thousands), as in
+\code{list(income = list(decimals = 2, big_mark = TRUE))}. Formats change only
+how numbers look; filters, search and exports use the full values.
+Readers can change them in each column's options.}
 
 \item{counts}{Optional one or two column names: the \strong{Counts} panel opens
 with the filtered rows counted by these columns.}
@@ -145,6 +153,8 @@ that row, shown or not, at full precision, with a box to find a column.
 While it is open, clicking any row shows that row; the arrow buttons (or
 the Up and Down keys) step through the filtered rows, and \strong{Copy} copies
 the row as name and value lines.
+\item A number column's options (the sliders button) also set how its numbers
+are shown: a fixed number of decimals and a thousands separator.
 \item The pin button in a header (shown on hover) pins the column: pinned
 columns move to the left and stay in view, with the row numbers, when
 scrolling sideways.
@@ -165,7 +175,8 @@ bring back a column (and its filter) that was unticked by mistake.
 (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
 or copies them to the clipboard as tab-separated text.
 \item The search box has regular-expression (\verb{.*}) and \code{NOT} toggles.
-\item Toolbar switches change the theme and turn on a monospace font.
+\item The faint \strong{Mono} and theme buttons at the right of the top band switch
+the table font and the colour theme.
 }
 }
 

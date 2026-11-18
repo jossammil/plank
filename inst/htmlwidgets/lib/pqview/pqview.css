@@ -83,11 +83,75 @@
   white-space: pre-line;
 }
 
+.pqv-headright {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+
 .pqv-sizes {
   flex: none;
   display: flex;
   gap: 14px;
   padding-bottom: 1px;
+}
+
+/* font and theme: display preferences, kept faint */
+.pqv-prefs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: -2px;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.pqv-prefs:hover,
+.pqv-prefs:focus-within {
+  opacity: 1;
+}
+
+.pqv-pref {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-width: 22px;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--pqv-muted);
+  font: 11px/1 var(--pqv-mono-font);
+  cursor: pointer;
+}
+
+.pqv-pref:hover {
+  border-color: var(--pqv-line-strong);
+  color: var(--pqv-fg);
+}
+
+.pqv-pref:focus-visible {
+  outline: 2px solid var(--pqv-accent);
+  outline-offset: -1px;
+}
+
+.pqv-pref[aria-pressed="true"] {
+  color: var(--pqv-fg);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.pqv-pref-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.pqv-opt-format .pqv-opt-item select {
+  flex: none;
+  width: auto;
+  margin-left: auto;
 }
 
 .pqv-size {
@@ -2207,4 +2271,70 @@ select.pqv-input {
 .pqv.pqv-mono .pqv-detail-cname {
   font-family: var(--pqv-mono-font);
   font-size: 12px;
+}
+
+/* ---- narrow screens ------------------------------------------------------------ */
+
+@media (max-width: 560px) {
+  .pqv-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .pqv-headright {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  /* Three rows: columns, views and the row count; search, undo and clear;
+     then the actions with the WHERE and See Query switches. */
+  .pqv-toolbar {
+    gap: 6px;
+  }
+
+  .pqv-toolbar::before {
+    content: "";
+    order: 5;
+    flex: 0 0 100%;
+    height: 0;
+  }
+
+  /* the empty line break adds one gap too many */
+  .pqv-toolbar > .pqv-btn:not(.pqv-viewsbtn):not(:first-child):not(.pqv-clear),
+  .pqv-toolbar > .pqv-switches {
+    margin-top: -6px;
+  }
+
+  .pqv-toolbar > .pqv-status {
+    order: 1;
+  }
+
+  .pqv-toolbar > .pqv-searchgroup {
+    order: 2;
+    flex: 1 1 150px;
+    min-width: 150px;
+    max-width: none;
+  }
+
+  .pqv-toolbar > .pqv-undo {
+    order: 3;
+  }
+
+  .pqv-toolbar > .pqv-btn:not(.pqv-viewsbtn):not(:first-child) {
+    order: 6;
+    padding: 0 8px;
+  }
+
+  .pqv-toolbar > .pqv-btn.pqv-clear {
+    order: 4;
+  }
+
+  .pqv-toolbar > .pqv-switches {
+    order: 7;
+    padding-left: 6px;
+  }
+
+  .pqv-switches .pqv-toggle {
+    padding: 0 7px;
+  }
 }

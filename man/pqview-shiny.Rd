@@ -28,3 +28,32 @@ returns a render function.
 \description{
 Output and render functions for using \code{\link[=pqview]{pqview()}} in Shiny applications.
 }
+\details{
+The viewer reports what the reader is looking at as Shiny inputs, named
+after the output id:
+\itemize{
+\item \verb{input$<id>_rows}: the row numbers (of the data given to \code{\link[=pqview]{pqview()}}) of
+the filtered rows, in the order shown.
+\item \verb{input$<id>_state}: a list with \code{columns} (shown, in order), \code{sort}
+(\code{-} marks descending), \code{pinned}, \code{where} (every filter, the search and
+the WHERE query as one condition, as See Query shows it), \code{rows_shown}
+and \code{rows_total}.
+\item \verb{input$<id>_row}: the row number open in the row panel, or \code{NULL}.
+}
+
+They update a quarter of a second after the reader stops changing things.
+}
+\examples{
+if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+  shiny::shinyApp(
+    shiny::fluidPage(pqviewOutput("cars"), shiny::verbatimTextOutput("picked")),
+    function(input, output) {
+      output$cars <- renderPqview(pqview(mtcars))
+      output$picked <- shiny::renderPrint({
+        rows <- unlist(input$cars_rows)
+        c(rows = length(rows), mean_mpg = mean(mtcars$mpg[rows]))
+      })
+    }
+  )
+}
+}

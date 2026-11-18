@@ -36,6 +36,7 @@ export class CountsPanel {
    * @param {() => void} [opts.onChange] the panel was opened, closed or set to count differently
    * @param {(px: number) => void} [opts.onHeight] the table's height was dragged
    * @param {number} [opts.height] remembered table height
+   * @param {(name: string) => object|null} [opts.getFormat] display format of a number column
    */
   constructor(host, opts) {
     this.opts = opts
@@ -334,7 +335,7 @@ export class CountsPanel {
         keys[1] ? label(keys[1], g.b) : null,
         h('td', { class: 'pqv-cn', text: g.count.toLocaleString() }),
         h('td', { class: 'pqv-cp' }, bar, h('span', { class: 'pqv-cpv', text: pct(g.count, total) })),
-        valueCol ? h('td', { class: g.value === null ? 'pqv-cn pqv-isna' : 'pqv-cn', text: formatStat(g.value, valueCol, stat) }) : null,
+        valueCol ? h('td', { class: g.value === null ? 'pqv-cn pqv-isna' : 'pqv-cn', text: formatStat(g.value, valueCol, stat, this.opts.getFormat ? this.opts.getFormat(valueCol.name) : null) }) : null,
         h('td', { class: 'pqv-ca' }, h('button', {
           class: 'pqv-link pqv-counts-ex', type: 'button', text: 'Exclude', title: 'Hide this group (adds to the WHERE query)',
         }))))

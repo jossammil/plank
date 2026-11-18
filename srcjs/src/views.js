@@ -64,6 +64,9 @@ export function makeView(name, s) {
     whereInvert: !!s.whereInvert,
     sort: s.sort.map((x) => ({ name: x.name, dir: x.dir === 'desc' ? 'desc' : 'asc' })),
     pinned: (s.pinned || []).filter((name) => s.columns.includes(name)),
+    formats: (s.formats || []).filter(([name]) => s.columns.includes(name))
+      .map(([n, f]) => [n, { decimals: f.decimals ?? null, big: !!f.big }])
+      .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
     counts: s.counts ? cleanCounts(s.counts) : null,
   }
 }
@@ -102,6 +105,9 @@ export function normalizeView(raw) {
     whereInvert: !!raw.whereInvert,
     sort,
     pinned: strings(raw.pinned),
+    formats: Array.isArray(raw.formats)
+      ? raw.formats.filter((f) => Array.isArray(f) && typeof f[0] === 'string' && f[1] && typeof f[1] === 'object')
+      : null,
     counts: raw.counts == null ? null : cleanCounts(Array.isArray(raw.counts) || typeof raw.counts === 'string'
       ? { by: strings(raw.counts) } : raw.counts),
   }
@@ -116,6 +122,7 @@ export function viewSignature(v) {
     v.columns, v.filters.map(([n, s]) => [n, SPEC_KEYS.map((k) => s[k]), s.values]),
     v.search, v.searchRegex, v.searchInvert, v.where, v.whereInvert, v.sort.map((x) => [x.name, x.dir]),
     v.pinned || [],
+    v.formats || [],
   ])
 }
 

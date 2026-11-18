@@ -88,3 +88,27 @@ test_that("pinned columns reach the browser and are checked", {
   expect_error(pqview(mtcars, views = list(a = pqview_view(columns = "hp", pin = "wt"))), "view 'a' `pin` must be shown")
   expect_output(print(pqview_view(pin = "x")), "pin      x")
 })
+
+test_that("number formats reach the browser and are checked", {
+  w <- pqview(mtcars, formats = list(disp = list(decimals = 1, big_mark = TRUE), hp = list(big_mark = TRUE)))
+  expect_identical(w$x$formats, list(disp = list(decimals = 1L, big_mark = TRUE), hp = list(big_mark = TRUE)))
+  expect_null(pqview(mtcars)$x$formats)
+  expect_error(pqview(mtcars, formats = list(list(decimals = 1))), "named list")
+  expect_error(pqview(mtcars, formats = list(zz = list(decimals = 1))), "Unknown column in `formats`")
+  expect_error(pqview(mtcars, formats = list(hp = list(decimals = 1.5))), "whole number")
+  expect_error(pqview(mtcars, formats = list(hp = list(big_mark = ","))), "TRUE or FALSE")
+  expect_error(pqview(mtcars, formats = list(hp = list(digits = 2))), "Unknown setting")
+})
+
+test_that("the add-in reads a selected object or parquet path", {
+  path <- tempfile(fileext = ".parquet")
+  on.exit(unlink(path))
+  nanoparquet::write_parquet(mtcars, path)
+  expect_identical(addin_data(path), path)
+  expect_identical(addin_data(paste0('"', path, '"')), path)
+  e <- new.env()
+  e$df <- iris
+  expect_identical(addin_data("df", e), iris)
+  expect_identical(addin_data("head(df, 3)", e), head(iris, 3))
+  expect_true(file.exists(system.file("rstudio", "addins.dcf", package = "pqview")))
+})

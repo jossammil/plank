@@ -2,7 +2,7 @@
 // one or two columns over the filtered rows, with an optional statistic of a
 // number column. Everything here is pure: columns and a view in, groups out.
 
-import { formatNumber, formatDate, formatDateTime, DAY_MS } from './format.js'
+import { formatNumber, formatNumberAs, formatDate, formatDateTime, DAY_MS } from './format.js'
 import { sortKey } from './store.js'
 import { ident, str } from './sql.js'
 
@@ -480,10 +480,10 @@ export function excludeCondition(keys, g) {
 }
 
 /** Display text for a statistic. */
-export function formatStat(v, col, stat) {
+export function formatStat(v, col, stat, fmt = null) {
   if (v === null) return 'NA'
   if (col.type === 'boolean' && stat === 'mean') return (v * 100).toFixed(1) + '%'
-  return formatNumber(v, col.digits || 7)
+  return formatNumberAs(v, col.digits || 7, fmt)
 }
 
 /** The groups as rows of text (header first), for copying or CSV. */

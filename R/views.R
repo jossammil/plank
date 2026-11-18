@@ -137,6 +137,34 @@ browser_pin <- function(pin, names, shown, context = "") {
   as.list(unique(pin))
 }
 
+# Number display formats as the browser reads them.
+browser_formats <- function(formats, names) {
+  if (is.null(formats)) return(NULL)
+  if (!is.list(formats) || is.null(names(formats)) || any(!nzchar(names(formats)))) {
+    stop("`formats` must be a named list, such as list(income = list(decimals = 2, big_mark = TRUE)).", call. = FALSE)
+  }
+  check_known(names(formats), names, "formats")
+  out <- lapply(names(formats), function(name) {
+    f <- formats[[name]]
+    if (!is.list(f)) stop("`formats$", name, "` must be a list with `decimals` and/or `big_mark`.", call. = FALSE)
+    bad <- setdiff(names(f), c("decimals", "big_mark"))
+    if (length(bad)) stop("Unknown setting in `formats$", name, "`: ", paste(bad, collapse = ", "), ".", call. = FALSE)
+    d <- f$decimals
+    if (!is.null(d) && !(is.numeric(d) && length(d) == 1L && !is.na(d) && d >= 0 && d <= 10 && d == round(d))) {
+      stop("`formats$", name, "$decimals` must be a whole number from 0 to 10.", call. = FALSE)
+    }
+    b <- f$big_mark
+    if (!is.null(b) && !(is.logical(b) && length(b) == 1L && !is.na(b))) {
+      stop("`formats$", name, "$big_mark` must be TRUE or FALSE.", call. = FALSE)
+    }
+    out <- list()
+    if (!is.null(d)) out$decimals <- as.integer(d)
+    out$big_mark <- isTRUE(b)
+    out
+  })
+  stats::setNames(out, names(formats))
+}
+
 # Views as a list the browser reads: list(name, columns, where, sort, pinned, counts).
 browser_views <- function(views, names, default_columns) {
   if (is.null(views)) return(NULL)

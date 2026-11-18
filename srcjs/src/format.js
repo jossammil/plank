@@ -12,6 +12,22 @@ export function formatNumber(v, digits = 7) {
   return String(+v.toPrecision(digits))
 }
 
+/**
+ * A number with a display format: `decimals` (null keeps the usual
+ * significant digits) and `big` (a comma between thousands).
+ */
+export function formatNumberAs(v, digits, fmt) {
+  if (!fmt || v !== v || v === Infinity || v === -Infinity) return formatNumber(v, digits)
+  let s = fmt.decimals == null ? formatNumber(v, digits) : v.toFixed(fmt.decimals)
+  if (/^-0(\.0*)?$/.test(s)) s = s.slice(1)
+  if (fmt.big && !/e/i.test(s)) {
+    const neg = s[0] === '-'
+    const [int, frac] = (neg ? s.slice(1) : s).split('.')
+    s = (neg ? '-' : '') + int.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac === undefined ? '' : '.' + frac)
+  }
+  return s
+}
+
 export function formatDate(ms) {
   const d = new Date(ms)
   return `${pad(d.getUTCFullYear(), 4)}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`

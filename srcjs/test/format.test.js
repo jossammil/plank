@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  formatNumber, formatDate, formatDateTime, makeZone, parseNumberInput, parseDateInput,
+  formatNumber, formatNumberAs, formatDate, formatDateTime, makeZone, parseNumberInput, parseDateInput,
 } from '../src/format.js'
 
 test('formatNumber', () => {
@@ -72,4 +72,15 @@ test('parseDateInput covers the whole period for an upper bound', () => {
   assert.equal(parseDateInput('2024-02-10', true), Date.UTC(2024, 1, 11) - 1)
   assert.equal(parseDateInput('2024-02-10 08:30', true), Date.UTC(2024, 1, 10, 8, 31) - 1)
   assert.equal(parseDateInput('2024-02-10T08:30:15', false), Date.UTC(2024, 1, 10, 8, 30, 15))
+})
+
+test('number display formats: decimals and thousands separators', () => {
+  assert.equal(formatNumberAs(1234567.891, 7, { decimals: 2, big: true }), '1,234,567.89')
+  assert.equal(formatNumberAs(1234567.891, 7, { decimals: null, big: true }), '1,234,568')
+  assert.equal(formatNumberAs(-1234.5, 7, { decimals: 0, big: true }), '-1,235')
+  assert.equal(formatNumberAs(999, 7, { decimals: 1, big: true }), '999.0')
+  assert.equal(formatNumberAs(-0.001, 7, { decimals: 2, big: false }), '0.00')
+  assert.equal(formatNumberAs(1e22, 7, { decimals: 2, big: true }), '1e+22')
+  assert.equal(formatNumberAs(Infinity, 7, { decimals: 2, big: true }), 'Inf')
+  assert.equal(formatNumberAs(0.1234, 7, null), '0.1234')
 })

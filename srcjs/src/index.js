@@ -99,7 +99,7 @@ export function mount(el, x) {
   }
 
   const state = {
-    selected: [], cols: [], specs: new Map(), sort: [], pinned: [], view: new Uint32Array(0),
+    selected: [], cols: [], specs: new Map(), sort: [], pinned: [], formats: new Map(), view: new Uint32Array(0),
     search: '', searchRegex: loadPref('searchRegex') === '1', searchInvert: false,
     queryMask: null, queryInvert: false, queryError: null, queryCols: [], queryText: '', computed: false,
   }
@@ -143,7 +143,7 @@ export function mount(el, x) {
     const searchRegexBtn = toggle('.*', 'Search with a regular expression', state.searchRegex)
     const searchNotBtn = toggle('NOT', 'Show rows that do NOT match the search', false)
     const status = h('div', { class: 'pqv-status', role: 'status' })
-    const clearBtn = h('button', { class: 'pqv-btn', type: 'button', text: 'Clear filters', hidden: true })
+    const clearBtn = h('button', { class: 'pqv-btn pqv-clear', type: 'button', text: 'Clear filters', hidden: true })
     const undoBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button', disabled: true })
     undoBtn.innerHTML = svg('<path d="M6 3 2.5 6.5 6 10"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/>')
     const redoBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button', disabled: true })
@@ -166,8 +166,13 @@ export function mount(el, x) {
     })
     const queryBtn = toggle('WHERE', 'Show or hide the WHERE query bar', prefs.query)
     const fullBtn = toggle('See Query', 'Show every filter, search and WHERE condition combined as one query', prefs.full)
-    const monoBtn = toggle('Mono', 'Monospace font', prefs.mono)
-    const themeBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button' })
+    // Display preferences sit quietly in the title band, apart from the
+    // controls that change the data shown.
+    const monoBtn = h('button', {
+      class: 'pqv-pref pqv-pref-mono', type: 'button', text: 'Mono', title: 'Monospace font in the table',
+      'aria-pressed': String(!!prefs.mono),
+    })
+    const themeBtn = h('button', { class: 'pqv-pref pqv-pref-icon', type: 'button' })
 
     // ---- title band: title, notes and data sizes -------------------------
     const dataBytes = bytes.byteLength
@@ -182,14 +187,16 @@ export function mount(el, x) {
       h('div', { class: 'pqv-heading' },
         x.title ? h('div', { class: 'pqv-title', text: x.title, title: x.title }) : null,
         notes ? h('div', { class: 'pqv-notes', text: notes }) : null),
-      h('div', { class: 'pqv-sizes' }, sizeData, sizeExport))
+      h('div', { class: 'pqv-headright' },
+        h('div', { class: 'pqv-sizes' }, sizeData, sizeExport),
+        h('div', { class: 'pqv-prefs' }, monoBtn, themeBtn)))
     header.classList.toggle('pqv-header-empty', !x.title && !notes)
 
     const toolbar = h('div', { class: 'pqv-toolbar' },
       pickerBtn, viewsBtn,
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
       status, h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
-      h('div', { class: 'pqv-switches' }, queryBtn, fullBtn, monoBtn, themeBtn))
+      h('div', { class: 'pqv-switches' }, queryBtn, fullBtn))
 
     // ---- query bar ------------------------------------------------------
     const queryInput = h('input', {
@@ -269,6 +276,7 @@ export function mount(el, x) {
       countsSoon()
       detailSoon()
       viewLabelSoon()
+      shinySoon()
       recordSoon()
     }
     const recomputeSoon = debounce(recompute, 90)
@@ -276,6 +284,33 @@ export function mount(el, x) {
     const countsSoon = debounce(() => counts && counts.update(), 120)
     let detail = null
     const detailSoon = debounce(() => detail && detail.refresh(), 120)
+    // In Shiny, the reader's rows and settings are sent back as inputs:
+    // <id>_rows (row numbers, in display order), <id>_state and <id>_row.
+    const shiny = () => (el.id && window.Shiny && typeof window.Shiny.setInputValue === 'function' ? window.Shiny : null)
+    let shinyRows = null
+    const sendShiny = () => {
+      const S = shiny()
+      if (!S) return
+      if (shinyRows !== state.view) {
+        shinyRows = state.view
+        const rows = new Array(state.view.length)
+        for (let k = 0; k < rows.length; k++) rows[k] = state.view[k] + 1
+        S.setInputValue(el.id + '_rows', rows)
+      }
+      S.setInputValue(el.id + '_state', {
+        columns: state.cols.map((c) => c.name),
+        sort: state.sort.map((s) => (s.dir === 'desc' ? '-' : '') + s.name),
+        pinned: state.pinned.slice(),
+        where: currentParts().join(' AND '),
+        rows_shown: state.view.length,
+        rows_total: ds.n,
+      })
+    }
+    const shinySoon = debounce(sendShiny, 250)
+    const sendShinyRow = (i) => {
+      const S = shiny()
+      if (S) S.setInputValue(el.id + '_row', i < 0 ? null : i + 1)
+    }
     let updateViewLabel = () => {}
     const viewLabelSoon = debounce(() => updateViewLabel(), 300)
 
@@ -385,6 +420,14 @@ export function mount(el, x) {
         else if (onNumber || detail.isOpen) openDetail(i)
       },
       onPin: (name) => togglePin(name),
+      getFormat: (name) => state.formats.get(name) || null,
+      onFormat: (name, fmt) => {
+        if (fmt) state.formats.set(name, fmt)
+        else state.formats.delete(name)
+        countsSoon()
+        viewLabelSoon()
+        recordSoon()
+      },
     })
     api.grid = grid
 
@@ -783,6 +826,7 @@ export function mount(el, x) {
       onDrill: (cond) => addWhere(cond),
       copyText: (text) => copyText(text),
       download: (blob) => download(blob, 'csv', fileBase + '_counts'),
+      getFormat: (name) => state.formats.get(name) || null,
       onClose: () => setCountsOpen(false),
       onChange: () => viewLabelSoon(),
       height: +loadPref('countsHeight') || 0,
@@ -808,6 +852,7 @@ export function mount(el, x) {
       getView: () => state.view,
       onRow: (i, pos, reveal) => {
         grid.setCurrent(i)
+        sendShinyRow(i)
         if (reveal && pos >= 0) grid.scrollToRow(pos)
       },
       onClose: () => closeDetail(),
@@ -829,6 +874,7 @@ export function mount(el, x) {
       const wasFocused = detailHost.contains(document.activeElement)
       detail.close()
       grid.setCurrent(-1)
+      sendShinyRow(-1)
       grid.schedule()
       if (wasFocused) grid.scroller.focus({ preventScroll: true })
     }
@@ -1312,11 +1358,12 @@ export function mount(el, x) {
         query: queryInput.value, queryInvert: state.queryInvert,
         sort: state.sort.map((x) => ({ ...x })),
         pinned: state.pinned.slice(),
+        formats: Array.from(state.formats, ([n, f]) => [n, { ...f }]),
         marks: snapshotMarks(),
       }
       snap.sig = JSON.stringify([
         order, specs.map(([n, sp]) => [n, { ...sp, codes: sp.codes ? Array.from(sp.codes).sort((a, b) => a - b) : null }]),
-        snap.search, snap.searchRegex, snap.searchInvert, snap.query, snap.queryInvert, snap.sort, snap.pinned, snap.marks.ver,
+        snap.search, snap.searchRegex, snap.searchInvert, snap.query, snap.queryInvert, snap.sort, snap.pinned, snap.formats, snap.marks.ver,
       ])
       return snap
     }
@@ -1392,6 +1439,7 @@ export function mount(el, x) {
       state.specs = t.specs
       state.sort = t.sort.map((x) => ({ ...x }))
       state.pinned = (t.pinned || []).slice()
+      if (t.formats) state.formats = new Map(t.formats.map(([n, f]) => [n, { ...f }]))
       state.search = t.search
       searchInput.value = t.search
       state.searchRegex = t.searchRegex
@@ -1457,8 +1505,15 @@ export function mount(el, x) {
         pinned,
         filters: v.filters.filter(([name]) => columns.includes(name)),
         sort: v.sort.filter((s) => columns.includes(s.name)),
+        // Views without formats (from R, or saved before formats existed)
+        // use the formats the viewer started with.
+        formats: (v.formats || startFormats).filter(([name]) => columns.includes(name))
+          .sort((a, b) => (a[0] < b[0] ? -1 : 1)),
       }
     }
+    const startFormats = Object.entries(x.formats || {})
+      .filter(([name, f]) => f && hasCol(name))
+      .map(([name, f]) => [name, { decimals: f.decimals == null ? null : +f.decimals, big: !!f.big_mark }])
     const authorViews = []
     for (const raw of [].concat(x.views || [])) {
       const v = normalizeView(raw)
@@ -1494,6 +1549,7 @@ export function mount(el, x) {
       whereInvert: state.queryInvert,
       sort: state.sort,
       pinned: state.pinned,
+      formats: Array.from(state.formats),
       counts: counts.config(),
     })
     let activeView = null
@@ -1526,6 +1582,7 @@ export function mount(el, x) {
           specs,
           sort: v.sort,
           pinned: v.pinned,
+          formats: v.formats,
           search: v.search,
           searchRegex: v.searchRegex,
           searchInvert: v.searchInvert,
@@ -1702,6 +1759,7 @@ export function mount(el, x) {
     counts.refreshFields()
     picker.setSelected(initial.filter(hasCol))
     state.pinned = [].concat(x.pin || []).filter(hasCol)
+    for (const [name, f] of startFormats) state.formats.set(name, { ...f })
     state.sort = [].concat(x.sort || [])
       .filter((s) => s && typeof s.name === 'string' && hasCol(s.name))
       .map((s) => ({ name: s.name, dir: s.dir === 'desc' ? 'desc' : 'asc' }))

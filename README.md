@@ -51,7 +51,18 @@ pqview(mtcars, sort = c("cyl", "-mpg"), pin = "rowname", counts = "cyl",
 
 It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 (use `embed-resources: true` for a single-file document) and in Shiny with
-`pqviewOutput()` / `renderPqview()`.
+`pqviewOutput()` / `renderPqview()`. In Shiny, the reader's filtered rows
+come back as `input$<id>_rows` (row numbers, in the order shown), the
+columns, sort and combined filter as `input$<id>_state`, and the row open in
+the row panel as `input$<id>_row`.
+
+In RStudio, the **View in pqview** add-in (Addins menu) opens the selected
+data frame, or the selected path to a parquet file.
+
+```r
+# Show numbers with fixed decimals and thousands separators
+pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
+```
 
 ## What the page does
 
@@ -170,9 +181,15 @@ It is an htmlwidget, so it also works in R Markdown and Quarto chunks
   Unticking a column drops its filter, and deleting a marker column drops
   its marks; undo brings both back. Up to 100 steps are kept until the page
   is closed.
-- **Switches** for the WHERE bar, See Query, a monospace font (on by
-  default) and the theme (auto, light, dark). Each reader's choices are
-  remembered in their browser.
+- **Number formats.** A number column's options (the sliders button) set a
+  fixed number of decimals and a thousands separator (`1,234.50`). Formats
+  change only how numbers look: filters, search, the row panel and exports
+  keep full values. They are part of undo and saved views; `formats =` sets
+  them from R.
+- **Switches** for the WHERE bar and See Query in the toolbar. The faint
+  **Mono** and theme buttons at the right of the top band switch the table
+  font (monospace by default) and the theme (auto, light, dark); each
+  reader's choices are remembered in their browser.
 - When the viewer fills a page of its own, it leaves `top_offset` pixels
   (default 56) above the toolbar, so browser chrome such as Safari's
   full-screen toolbar does not cover it.

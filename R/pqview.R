@@ -29,6 +29,12 @@
 #' @param sort Optional columns to sort by at first, in order of priority.
 #'   Prefix a name with `-` for descending order, as in
 #'   `c("region", "-income")`. The columns must be among those shown.
+#' @param formats Optional display formats for number columns: a named list
+#'   with, for each column, `decimals` (a fixed number of decimal places) and
+#'   `big_mark` (`TRUE` for a comma between thousands), as in
+#'   `list(income = list(decimals = 2, big_mark = TRUE))`. Formats change only
+#'   how numbers look; filters, search and exports use the full values.
+#'   Readers can change them in each column's options.
 #' @param counts Optional one or two column names: the **Counts** panel opens
 #'   with the filtered rows counted by these columns.
 #' @param views Optional named list of [pqview_view()] objects, offered in
@@ -95,6 +101,8 @@
 #'   While it is open, clicking any row shows that row; the arrow buttons (or
 #'   the Up and Down keys) step through the filtered rows, and **Copy** copies
 #'   the row as name and value lines.
+#' * A number column's options (the sliders button) also set how its numbers
+#'   are shown: a fixed number of decimals and a thousands separator.
 #' * The pin button in a header (shown on hover) pins the column: pinned
 #'   columns move to the left and stay in view, with the row numbers, when
 #'   scrolling sideways.
@@ -115,7 +123,8 @@
 #'   (.xlsx), R data (.rds, keeping factors, dates and time zones) or parquet,
 #'   or copies them to the clipboard as tab-separated text.
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
-#' * Toolbar switches change the theme and turn on a monospace font.
+#' * The faint **Mono** and theme buttons at the right of the top band switch
+#'   the table font and the colour theme.
 #'
 #' @examples
 #' if (interactive()) {
@@ -135,6 +144,7 @@ pqview <- function(data,
                    where = NULL,
                    sort = NULL,
                    pin = NULL,
+                   formats = NULL,
                    counts = NULL,
                    views = NULL,
                    theme = c("auto", "light", "dark"),
@@ -169,6 +179,7 @@ pqview <- function(data,
   shown <- if (is.null(columns)) utils::head(enc$names, 10L) else columns
   sort <- browser_sort(sort, enc$names, shown)
   pin <- browser_pin(pin, enc$names, shown)
+  formats <- browser_formats(formats, enc$names)
   if (!is.null(counts)) check_known(counts, enc$names, "counts")
   views <- browser_views(views, enc$names, shown)
   if (length(enc$bytes) > max_bytes) {
@@ -197,6 +208,7 @@ pqview <- function(data,
   if (!is.null(where) && nzchar(trimws(where))) x$where <- where
   if (length(sort)) x$sort <- sort
   if (length(pin)) x$pin <- pin
+  if (length(formats)) x$formats <- formats
   if (!is.null(counts)) x$counts <- as.list(counts)
   if (length(views)) x$views <- views
 
@@ -224,6 +236,18 @@ pqview <- function(data,
 #'
 #' Output and render functions for using [pqview()] in Shiny applications.
 #'
+#' The viewer reports what the reader is looking at as Shiny inputs, named
+#' after the output id:
+#' * `input$<id>_rows`: the row numbers (of the data given to [pqview()]) of
+#'   the filtered rows, in the order shown.
+#' * `input$<id>_state`: a list with `columns` (shown, in order), `sort`
+#'   (`-` marks descending), `pinned`, `where` (every filter, the search and
+#'   the WHERE query as one condition, as See Query shows it), `rows_shown`
+#'   and `rows_total`.
+#' * `input$<id>_row`: the row number open in the row panel, or `NULL`.
+#'
+#' They update a quarter of a second after the reader stops changing things.
+#'
 #' @param outputId Output variable to read from.
 #' @param width,height Must be a valid CSS unit (like `"100%"` or `"600px"`).
 #' @param expr An expression that returns a [pqview()] widget.
@@ -232,6 +256,19 @@ pqview <- function(data,
 #'
 #' @return `pqviewOutput()` returns a Shiny output element; `renderPqview()`
 #'   returns a render function.
+#' @examples
+#' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
+#'   shiny::shinyApp(
+#'     shiny::fluidPage(pqviewOutput("cars"), shiny::verbatimTextOutput("picked")),
+#'     function(input, output) {
+#'       output$cars <- renderPqview(pqview(mtcars))
+#'       output$picked <- shiny::renderPrint({
+#'         rows <- unlist(input$cars_rows)
+#'         c(rows = length(rows), mean_mpg = mean(mtcars$mpg[rows]))
+#'       })
+#'     }
+#'   )
+#' }
 #' @name pqview-shiny
 #' @export
 pqviewOutput <- function(outputId, width = "100%", height = "600px") {

@@ -58,7 +58,9 @@ const pqv = page.locator('.pqv')
 const undoBtn = page.locator('.pqv-undo .pqv-btn').nth(0)
 const redoBtn = page.locator('.pqv-undo .pqv-btn').nth(1)
 const step = () => page.waitForTimeout(650)
-const toggleBtn = (text) => page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true })
+const toggleBtn = (text) => (text === 'Mono'
+  ? page.locator('.pqv-prefs .pqv-pref-mono')
+  : page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true }))
 const exportAs = async (format) => {
   await page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
   const [d] = await Promise.all([page.waitForEvent('download'), page.locator(`.pqv-export-item[data-format="${format}"]`).click()])
@@ -987,8 +989,62 @@ await page.evaluate(async (cols) => {
 await settle()
 check('no pinned columns left', await page.locator('.pqv-hcell.pqv-hpin[data-name]').count(), 0)
 
+// ---- number formats ------------------------------------------------------------
+await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollTop = 0; g.scroller.scrollLeft = 0; g.render() })
+const incomeIdx = (await headNames()).indexOf('income') + 1
+const incomeBefore = (await firstRow())[incomeIdx]
+await hcell('income').locator('.pqv-opt').click()
+await page.locator('.pqv-opts select[aria-label="income decimals"]').selectOption('2')
+await page.locator('.pqv-opt-format input[type=checkbox]').check()
+check('format options stay open while changing', await page.locator('.pqv-opts').isVisible(), true)
+await page.keyboard.press('Escape')
+await settle()
+const incomeRaw = await page.evaluate(() => { const p = document.querySelector('.pqv').pqview; return p.ds.peek('income').num[p.state.view[0]] })
+const want = incomeRaw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+check('income shown with 2 decimals and separators', (await firstRow())[incomeIdx], want)
+check('format leaves filters alone', await count(), expected.total)
+await hcell('income').locator('input').nth(0).fill('100000')
+await settle()
+check('filters still use plain numbers', await count(), expected.total - expected.income_under_100k - expected.income_na)
+await clear()
+await step()
+await undoBtn.click()
+await settle()
+await undoBtn.click()
+await settle()
+check('undo removes the format', (await firstRow())[incomeIdx], incomeBefore)
+await redoBtn.click()
+await settle()
+await redoBtn.click()
+await settle()
+check('redo brings it back', (await firstRow())[incomeIdx], want)
+await clear()
+
+// ---- Shiny inputs -------------------------------------------------------------------
+const shinyIn = await page.evaluate(async () => {
+  const sent = {}
+  window.Shiny = { setInputValue: (k, v) => { sent[k] = v } }
+  const el = document.querySelector('.pqv')
+  el.id = 'tbl'
+  const p = el.pqview
+  await p.runQuery()
+  p.openDetail(4)
+  await new Promise((r) => setTimeout(r, 500))
+  const out = { rows: sent.tbl_rows.length, first: sent.tbl_rows[0], state: sent.tbl_state, row: sent.tbl_row }
+  p.closeDetail()
+  out.closed = sent.tbl_row
+  delete window.Shiny
+  el.removeAttribute('id')
+  return out
+})
+check('Shiny: filtered row numbers', shinyIn.rows, expected.total)
+check('Shiny: row numbers count from 1', shinyIn.first, 1)
+check('Shiny: state', [shinyIn.state.rows_shown, shinyIn.state.rows_total, shinyIn.state.columns.length].join(), `${expected.total},${expected.total},10`)
+check('Shiny: open row', shinyIn.row, 5)
+check('Shiny: closed row', shinyIn.closed, null)
+
 // ---- theme and mono switches persist across reloads ------------------------
-const themeBtn = page.locator('.pqv-switches .pqv-icon')
+const themeBtn = page.locator('.pqv-prefs .pqv-pref-icon')
 await themeBtn.click() // auto -> light
 await themeBtn.click() // light -> dark
 check('theme switched to dark', await pqv.getAttribute('data-theme'), 'dark')
