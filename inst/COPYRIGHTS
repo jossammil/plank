@@ -6,8 +6,10 @@ writes). Each is distributed under the MIT License, reproduced below.
   https://github.com/hyparam/hyparquet
 - hyparquet-writer 0.18.0 (parquet writer), Copyright (c) Hyperparam,
   https://github.com/hyparam/hyparquet-writer
-- fflate 0.8.3 (gzip decompression), Copyright (c) 2026 Arjun Barrett,
+- fflate 0.8.3 (gzip and zip), Copyright (c) 2026 Arjun Barrett,
   https://github.com/101arrowz/fflate
+- fzstd 0.1.1 (zstd decompression), Copyright (c) 2020 Arjun Barrett,
+  https://github.com/101arrowz/fzstd
 
 The MIT License (MIT)
 

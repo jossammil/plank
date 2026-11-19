@@ -54,6 +54,10 @@ jobs:
     # The way other machines will install it: no Rtools or Xcode needed.
     runs-on: ${{ matrix.os }}
     name: install_github on ${{ matrix.os }}
+    env:
+      # remotes asks GitHub's API for the package; without a token the shared
+      # runners hit the anonymous rate limit.
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:

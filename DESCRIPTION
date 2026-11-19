@@ -6,7 +6,7 @@ Authors@R: c(
     person("Hyperparam", role = c("ctb", "cph"),
            comment = "hyparquet and hyparquet-writer JavaScript libraries"),
     person("Arjun", "Barrett", role = c("ctb", "cph"),
-           comment = "fflate JavaScript library")
+           comment = "fflate and fzstd JavaScript libraries")
   )
 Description: Browse a data frame or parquet file in the browser without a
     server. The data is embedded as compressed parquet inside one HTML file

@@ -346,6 +346,10 @@ on a laptop with the 30-column demo table:
 
 ## Development
 
+How the package works inside, which program does what, how to rebuild and
+update each part, the libraries it uses and how to debug it:
+[DEVELOPER-GUIDE.md](DEVELOPER-GUIDE.md).
+
 The browser code lives in `srcjs/` and is bundled with
 [hyparquet](https://github.com/hyparam/hyparquet),
 [hyparquet-writer](https://github.com/hyparam/hyparquet-writer) and
