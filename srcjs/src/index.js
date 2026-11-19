@@ -18,7 +18,7 @@ import { CountsPanel } from './counts.js'
 import { RowDetail } from './detail.js'
 import {
   readAppearance, defaultAppearance, applyAppearance, appearancePanel, effectiveFont, rowHeight, APPEARANCE_KEYS,
-  THEMES, FONTS, SIZES, DENSITIES,
+  THEMES, INKS, FONTS, SIZES, DENSITIES,
 } from './appearance.js'
 import { shortcutFor, isTyping, helpSheet, keyHint } from './keys.js'
 import { openPalette } from './palette.js'
@@ -154,7 +154,8 @@ function mountInstance(el, x, ctx = {}) {
   if (el.pqview && el.pqview.destroy) el.pqview.destroy()
   el.textContent = ''
   el.classList.add('pqv')
-  // Tabs, when the shell has more than one dataset open.
+  // Tabs, when the shell has more than one dataset open (placed at the foot
+  // once the viewer is built).
   const tabStrip = h('div', { class: 'pqv-tabs', role: 'tablist', 'aria-label': 'Open data', hidden: true })
   el.append(tabStrip)
   let dead = false
@@ -1579,7 +1580,8 @@ function mountInstance(el, x, ctx = {}) {
     })
 
     loading.remove()
-    el.append(header, toolbar, queryBar, fullBox, countsBox, body)
+    // Tabs sit at the foot, under the table, like a workbook's sheet tabs.
+    el.append(header, toolbar, queryBar, fullBox, countsBox, body, tabStrip)
     // On a narrow container the table matters more than the column list.
     if (el.clientWidth && el.clientWidth < 640) {
       pickerHost.hidden = true
@@ -2205,6 +2207,7 @@ function mountInstance(el, x, ctx = {}) {
       }
       for (const v of authorViews.concat(savedViews)) add(`View: ${v.name}`, () => applyView(v), '', 'View')
       for (const [value, label] of THEMES) add(`Theme: ${label}`, () => setLook('theme', value), '', 'Appearance')
+      for (const [value, label] of INKS) add(`Text colour: ${label}`, () => setLook('ink', value), '', 'Appearance')
       for (const [value, label] of FONTS) add(`Font: ${label}`, () => setLook('font', value), '', 'Appearance')
       for (const [value, label] of SIZES) add(`Text size: ${label}`, () => setLook('size', value), '', 'Appearance')
       for (const [value, label] of DENSITIES) add(`Row spacing: ${label}`, () => setLook('density', value), '', 'Appearance')
@@ -2401,6 +2404,9 @@ export function mount(el, x) {
   const notify = (text, bad = false, ms = 6000) => {
     const root = currentRoot()
     if (!root) return
+    // One message at a time, on the tab in view (a file read from another tab
+    // leaves no stale "Reading…" behind there).
+    for (const t of el.querySelectorAll('.pqv-toast')) t.hidden = true
     let toast = root.querySelector(':scope > .pqv-toast')
     if (!toast) {
       toast = h('div', { class: 'pqv-toast' })
@@ -2420,6 +2426,7 @@ export function mount(el, x) {
       if (!strip) continue
       strip.textContent = ''
       strip.hidden = tabs.length < 2
+      t.root.classList.toggle('pqv-has-tabs', tabs.length >= 2)
       tabs.forEach((u, k) => {
         const on = k === active
         const btn = h('button', {

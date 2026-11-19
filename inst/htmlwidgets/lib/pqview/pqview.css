@@ -3545,26 +3545,19 @@ select.pqv-input {
   display: none !important;
 }
 
-/* tabs, once more than one dataset is open */
+/* tabs at the foot, once more than one dataset is open: the active tab joins
+   the table above it, like a workbook's sheet tabs */
 .pqv-tabs {
   flex: none;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 2px;
   min-width: 0;
-  padding: 4px 8px 0;
+  padding: 0 8px 4px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--pqv-line);
+  border-top: 1px solid var(--pqv-line);
   background: var(--pqv-head);
   scrollbar-width: thin;
-}
-
-.pqv.pqv-standalone .pqv-tabs {
-  padding-top: calc(4px + var(--pqv-top, 0px));
-}
-
-.pqv.pqv-standalone .pqv-tabs:not([hidden]) + .pqv-header {
-  padding-top: 6px;
 }
 
 .pqv-tabwrap {
@@ -3572,10 +3565,10 @@ select.pqv-input {
   display: flex;
   align-items: center;
   max-width: 260px;
-  margin-bottom: -1px;
+  margin-top: -1px;
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 6px 6px 0 0;
+  border-top: 0;
+  border-radius: 0 0 6px 6px;
   color: var(--pqv-muted);
 }
 
@@ -3642,7 +3635,7 @@ select.pqv-input {
   outline-offset: -2px;
 }
 
-/* messages at the foot of the viewer: reading a file, or why it failed */
+/* messages at the foot of the viewer (above the tabs): reading a file, or why it failed */
 .pqv-toast {
   position: absolute;
   z-index: 30;
@@ -3795,4 +3788,102 @@ select.pqv-input {
   margin-top: 8px;
   color: var(--pqv-bad);
   font-size: 12px;
+}
+
+.pqv.pqv-has-tabs > .pqv-toast {
+  bottom: 48px;
+}
+
+/* ---- text colour --------------------------------------------------------------- */
+
+/* After the theme blocks, so a chosen text colour wins over the theme's own. */
+.pqv[data-ink="contrast"] {
+  --pqv-fg: #000000;
+}
+
+.pqv[data-ink="slate"] {
+  --pqv-fg: #3d4b5f;
+}
+
+.pqv[data-ink="navy"] {
+  --pqv-fg: #1e3a8a;
+}
+
+.pqv[data-ink="green"] {
+  --pqv-fg: #14532d;
+}
+
+.pqv[data-ink="amber"] {
+  --pqv-fg: #7a3a0c;
+}
+
+.pqv[data-ink="plum"] {
+  --pqv-fg: #5b1f86;
+}
+
+.pqv.pqv-dark[data-ink="contrast"] {
+  --pqv-fg: #ffffff;
+}
+
+.pqv.pqv-dark[data-ink="slate"] {
+  --pqv-fg: #cbd5e1;
+}
+
+.pqv.pqv-dark[data-ink="navy"] {
+  --pqv-fg: #bfdbfe;
+}
+
+.pqv.pqv-dark[data-ink="green"] {
+  --pqv-fg: #86efac;
+}
+
+.pqv.pqv-dark[data-ink="amber"] {
+  --pqv-fg: #ffb02e;
+}
+
+.pqv.pqv-dark[data-ink="plum"] {
+  --pqv-fg: #e9d5ff;
+}
+
+/* Terminal's glow follows the text colour (amber ink: an amber screen). */
+.pqv[data-theme="terminal"][data-ink] {
+  --pqv-glow: color-mix(in srgb, var(--pqv-fg) 30%, transparent);
+}
+
+/* the swatches: an "A" in each colour, on the theme's background */
+.pqv-ap-ink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+  border: 1px solid var(--pqv-line-strong);
+  border-radius: 50%;
+  background: var(--pqv-bg);
+  color: var(--pqv-fg);
+  font: 700 11px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.pqv-ap-ink[data-ink="contrast"] { color: #000000; }
+.pqv-ap-ink[data-ink="slate"] { color: #3d4b5f; }
+.pqv-ap-ink[data-ink="navy"] { color: #1e3a8a; }
+.pqv-ap-ink[data-ink="green"] { color: #14532d; }
+.pqv-ap-ink[data-ink="amber"] { color: #7a3a0c; }
+.pqv-ap-ink[data-ink="plum"] { color: #5b1f86; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="contrast"] { color: #ffffff; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="slate"] { color: #cbd5e1; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="navy"] { color: #bfdbfe; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="green"] { color: #86efac; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="amber"] { color: #ffb02e; }
+.pqv.pqv-dark .pqv-ap-ink[data-ink="plum"] { color: #e9d5ff; }
+
+/* the theme's own colour is whatever the theme sets: shown as a quiet dashed "A" */
+.pqv-ap-ink[data-ink="default"] {
+  border-style: dashed;
+  color: var(--pqv-muted);
+}
+
+.pqv-ap-choice[aria-checked="true"] .pqv-ap-ink {
+  border-color: var(--pqv-fg);
+  box-shadow: 0 0 0 2px var(--pqv-bg), 0 0 0 3.5px var(--pqv-fg);
 }

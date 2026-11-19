@@ -14,18 +14,18 @@ test('theme names: light is Classic, unknown names are refused', () => {
 })
 
 test('defaults come from R, then the built-in ones', () => {
-  assert.deepEqual(defaultAppearance({}), { theme: 'auto', accent: '', font: 'mono', size: 'normal', density: 'normal' })
+  assert.deepEqual(defaultAppearance({}), { theme: 'auto', accent: '', ink: '', font: 'mono', size: 'normal', density: 'normal' })
   assert.deepEqual(defaultAppearance({ theme: 'vintage', font: 'serif' }),
-    { theme: 'vintage', accent: '', font: 'serif', size: 'normal', density: 'normal' })
+    { theme: 'vintage', accent: '', ink: '', font: 'serif', size: 'normal', density: 'normal' })
   assert.equal(defaultAppearance({ theme: 'light' }).theme, 'classic')
   assert.equal(defaultAppearance({ theme: 'bogus', font: 'comic' }).theme, 'auto')
   assert.equal(defaultAppearance({ font: 'comic' }).font, 'mono')
 })
 
 test('saved choices win over R', () => {
-  const a = readAppearance(store({ theme: 'terminal', accent: 'teal', font: 'sans', size: 'large', density: 'roomy' }),
+  const a = readAppearance(store({ theme: 'terminal', accent: 'teal', ink: 'amber', font: 'sans', size: 'large', density: 'roomy' }),
     { theme: 'dark', font: 'serif' })
-  assert.deepEqual(a, { theme: 'terminal', accent: 'teal', font: 'sans', size: 'large', density: 'roomy' })
+  assert.deepEqual(a, { theme: 'terminal', accent: 'teal', ink: 'amber', font: 'sans', size: 'large', density: 'roomy' })
 })
 
 test('older saved preferences are migrated', () => {
@@ -37,8 +37,8 @@ test('older saved preferences are migrated', () => {
 })
 
 test('invalid saved values fall back', () => {
-  const a = readAppearance(store({ theme: 'x', accent: 'chartreuse', font: 'x', size: 'huge', density: 'x' }), { theme: 'modern' })
-  assert.deepEqual(a, { theme: 'modern', accent: '', font: 'mono', size: 'normal', density: 'normal' })
+  const a = readAppearance(store({ theme: 'x', accent: 'chartreuse', ink: 'rainbow', font: 'x', size: 'huge', density: 'x' }), { theme: 'modern' })
+  assert.deepEqual(a, { theme: 'modern', accent: '', ink: '', font: 'mono', size: 'normal', density: 'normal' })
 })
 
 test('dark themes, Terminal font and row heights', () => {

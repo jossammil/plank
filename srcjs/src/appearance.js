@@ -1,5 +1,5 @@
-// Appearance: colour theme, accent colour, table font, text size and row
-// spacing. The colours themselves live in pqview.css as token blocks; this
+// Appearance: colour theme, accent colour, text colour, table font, text
+// size and row spacing. The colours themselves live in pqview.css as token blocks; this
 // module only picks which block applies and builds the settings window.
 
 import { h } from './dom.js'
@@ -16,10 +16,15 @@ export const ACCENTS = [
   ['', 'Theme default'], ['blue', 'Blue'], ['teal', 'Teal'], ['green', 'Green'],
   ['amber', 'Amber'], ['red', 'Red'], ['purple', 'Purple'], ['pink', 'Pink'],
 ]
+// Text colours: dark shades on light themes, light shades on dark ones.
+export const INKS = [
+  ['', 'Theme default'], ['contrast', 'High contrast'], ['slate', 'Slate'], ['navy', 'Navy'],
+  ['green', 'Green'], ['amber', 'Amber'], ['plum', 'Plum'],
+]
 export const FONTS = [['mono', 'Mono'], ['sans', 'Sans'], ['serif', 'Serif']]
 export const SIZES = [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]
 export const DENSITIES = [['compact', 'Compact'], ['normal', 'Normal'], ['roomy', 'Roomy']]
-export const APPEARANCE_KEYS = ['theme', 'accent', 'font', 'size', 'density']
+export const APPEARANCE_KEYS = ['theme', 'accent', 'ink', 'font', 'size', 'density']
 
 const ROW_H = { compact: 22, normal: 26, roomy: 32 }
 
@@ -41,6 +46,7 @@ export function readAppearance(load, x = {}) {
   return {
     theme: normalizeTheme(load('theme')) || normalizeTheme(x.theme) || 'auto',
     accent: pick(ACCENTS, load('accent')) || '',
+    ink: pick(INKS, load('ink')) || '',
     font: pick(FONTS, load('font')) ||
       (oldMono === '1' ? 'mono' : oldMono === '0' ? 'sans' : null) ||
       pick(FONTS, x.font) || 'mono',
@@ -65,6 +71,8 @@ export function applyAppearance(el, a, systemDark) {
   el.dataset.theme = a.theme
   if (a.accent) el.dataset.accent = a.accent
   else delete el.dataset.accent
+  if (a.ink) el.dataset.ink = a.ink
+  else delete el.dataset.ink
   el.dataset.font = font
   el.dataset.size = a.size
   el.dataset.density = a.density
@@ -136,6 +144,9 @@ export function appearancePanel({ get, set, reset }) {
   const accent = radioGroup('Accent colour', ACCENTS, 'pqv-ap-swatches',
     (value) => h('span', { class: 'pqv-ap-swatch', 'data-accent': value || 'default', 'aria-hidden': 'true' }),
     (v) => set('accent', v))
+  const ink = radioGroup('Text colour', INKS, 'pqv-ap-swatches pqv-ap-inks',
+    (value) => h('span', { class: 'pqv-ap-ink', 'data-ink': value || 'default', 'aria-hidden': 'true', text: 'A' }),
+    (v) => set('ink', v))
   const seg = (label, list, key) => radioGroup(label, list, 'pqv-ap-seg',
     (value, text) => text, (v) => set(key, v))
   const font = seg('Font', FONTS, 'font')
@@ -152,6 +163,7 @@ export function appearancePanel({ get, set, reset }) {
       theme.el,
       h('div', { class: 'pqv-ap-head', text: 'Customize' }),
       row('Accent', accent),
+      row('Text', ink),
       row('Font', font, fontNote),
       row('Text size', size),
       row('Row spacing', density)),
@@ -163,6 +175,7 @@ export function appearancePanel({ get, set, reset }) {
     const terminal = a.theme === 'terminal'
     theme.sync(a.theme)
     accent.sync(a.accent)
+    ink.sync(a.ink)
     font.sync(effectiveFont(a), terminal)
     fontNote.hidden = !terminal
     size.sync(a.size)

@@ -227,8 +227,10 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
 - **Appearance.** The faint palette button at the right of the top band
   opens a small window with themes (Auto, which follows the system's light or
   dark setting, Classic, Modern, Dark, Vintage and Terminal, green on black
-  in monospace) and individual settings: accent colour, table font (mono,
-  sans or serif), text size and row spacing. Each reader's choices are
+  in monospace) and individual settings: accent colour, text colour (dark
+  shades on light themes, light shades on dark ones; amber on Terminal makes
+  an amber screen), table font (mono, sans or serif), text size and row
+  spacing. Each reader's choices are
   remembered in their browser; `theme =` and `font =` set the starting look
   from R.
 - **Minimal view.** The button in the table's top-left corner (or `M`)
@@ -237,7 +239,8 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   same button brings it all back; `minimal = TRUE` starts in it.
 - **Opening files.** The open button beside the palette button, the `O`
   key, or dropping files on the viewer opens CSV, TSV, Excel (.xlsx, first
-  sheet) and parquet files as tabs beside the data from R. Files are read in
+  sheet) and parquet files as tabs beside the data from R; the tabs run
+  along the foot of the viewer, like a workbook's sheet tabs. Files are read in
   the browser and never uploaded. CSV column types are guessed (numbers,
   TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty cells are
   missing; codes with leading zeros stay text); Excel types come from the

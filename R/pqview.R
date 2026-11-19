@@ -140,8 +140,8 @@
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
 #' * The faint palette button at the right of the top band opens the
 #'   Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
-#'   or Terminal), an accent colour, the table font (mono, sans or serif),
-#'   text size and row spacing. The choices are remembered in the reader's
+#'   or Terminal), an accent colour, a text colour, the table font (mono, sans
+#'   or serif), text size and row spacing. The choices are remembered in the reader's
 #'   browser.
 #' * The corner button above the row numbers (or `M`) switches the minimal
 #'   view, which folds away everything but the table.
@@ -174,7 +174,7 @@
 #' @section Opening files:
 #' **O**, the open button beside the palette button, or dropping files on
 #' the viewer opens CSV, TSV, Excel (.xlsx, first sheet) and parquet files as
-#' new tabs beside the data from R. The files are read in the reader's
+#' new tabs beside the data from R, listed along the foot of the viewer. The files are read in the reader's
 #' browser and never uploaded. Column types are guessed from CSV text
 #' (numbers, TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty
 #' cells are missing) and taken from the cell formats in Excel. Parquet files

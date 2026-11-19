@@ -2014,6 +2014,17 @@ await phone.close()
   await waitTabs(2)
   check('open: the file becomes a second tab', (await tabNames()).join('|'), 'Synthetic demo|people.csv')
   check('open: tabs show once there are two', await p.locator(`${shown} .pqv-tabs`).isVisible(), true)
+  check('tabs sit at the foot, under the table', await p.evaluate((sel) => {
+    const root = document.querySelector(sel)
+    const strip = root.querySelector('.pqv-tabs').getBoundingClientRect()
+    const table = root.querySelector('.pqv-scroller').getBoundingClientRect()
+    return strip.top >= table.bottom - 1 && Math.abs(strip.bottom - root.getBoundingClientRect().bottom) <= 2
+  }, shown), true)
+  check('messages stay above the tabs', await p.evaluate((sel) => {
+    const root = document.querySelector(sel)
+    const toast = root.querySelector('.pqv-toast')
+    return !toast || toast.hidden || toast.getBoundingClientRect().bottom <= root.querySelector('.pqv-tabs').getBoundingClientRect().top
+  }, shown), true)
   check('open: its rows are counted', await p.locator(`${shown} .pqv-status`).innerText(), '3 rows')
   check('open: CSV column types are guessed', await activeApi(() => document.querySelector('.pqv-shell').pqview.ds.fields.map((f) => f.tag).join()), 'chr,int,date,lgl')
   check('open: quoted text with a comma survives', await activeApi(async () => {
@@ -2022,6 +2033,8 @@ await phone.close()
     return col.levels ? col.levels[col.codes[2]] : null
   }), 'Lin, Q')
   await p.locator(`${shown} .pqv-tab`).first().click()
+  check('tabs: no stale "Reading" message left on the first tab', await p.evaluate(() =>
+    Array.from(document.querySelectorAll('.pqv-shell > .pqv:first-child .pqv-toast')).every((t) => t.hidden)), true)
   check('tabs: switching back shows the demo', await p.locator(`${shown} .pqv-status`).innerText(), `${expected.total.toLocaleString('en-US')} rows`)
 
   await openWith([tsv, xlsx, zstd], 'button')
@@ -2111,6 +2124,40 @@ await phone.close()
   await p.keyboard.press('Escape')
   check('unlocked: nothing about the data in browser storage', await p.evaluate(() =>
     Object.keys(window.localStorage).filter((k) => /^pqview\.(marks|views)\./.test(k)).length), 0)
+  await ctx.close()
+}
+
+// ---- text colour ------------------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const cellColor = () => p.locator('.pqv-rows:not(.pqv-pinrows) .pqv-row .pqv-cell').first().evaluate((e) => getComputedStyle(e).color)
+  const pick = async (group, value) => {
+    if (!(await p.locator('.pqv-appearance').isVisible())) await p.locator('.pqv-header .pqv-pref-look').click()
+    await p.locator(`.pqv-appearance .pqv-ap-group[aria-label="${group}"] .pqv-ap-choice[data-value="${value}"]`).click()
+  }
+  const before = await cellColor()
+  await pick('Text colour', 'navy')
+  check('text colour: navy on a light theme', await cellColor(), 'rgb(30, 58, 138)')
+  check('text colour: the accent is unchanged', await p.locator('.pqv').evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim()), '#1d5fd1')
+  await pick('Accent colour', 'green')
+  check('text colour and accent are separate choices', [await cellColor(), await p.locator('.pqv').evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim())].join(' '), 'rgb(30, 58, 138) #2b7a3a')
+  await pick('Theme', 'dark')
+  check('text colour: a light shade on a dark theme', await cellColor(), 'rgb(191, 219, 254)')
+  await pick('Theme', 'terminal')
+  await pick('Text colour', 'amber')
+  check('text colour: amber on Terminal', await cellColor(), 'rgb(255, 176, 46)')
+  if (storage) {
+    await p.reload()
+    await ready(p)
+    check('text colour survives a reload', await cellColor(), 'rgb(255, 176, 46)')
+  }
+  await p.locator('.pqv-header .pqv-pref-look').click()
+  await p.locator('.pqv-appearance .pqv-link', { hasText: 'Reset to defaults' }).click()
+  check('reset brings back the theme text colour', await cellColor(), before)
   await ctx.close()
 }
 
