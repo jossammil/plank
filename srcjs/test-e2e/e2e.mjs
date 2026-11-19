@@ -2161,6 +2161,42 @@ await phone.close()
   await ctx.close()
 }
 
+// ---- Clear filters appears beside the search without moving anything ----------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const xs = () => p.evaluate(() => Array.from(document.querySelectorAll('.pqv-tright button, .pqv-searchgroup > *'))
+    .map((b) => Math.round(b.getBoundingClientRect().left)).join())
+  const before = await xs()
+  await p.locator('.pqv-hcell[data-name="age"] input').first().fill('40')
+  await p.waitForTimeout(400)
+  const clear = p.locator('.pqv-btn', { hasText: 'Clear filters' })
+  check('Clear filters shows once a filter is set', await clear.isVisible(), true)
+  check('nothing else moves when it shows', await xs(), before)
+  const pos = await p.evaluate(() => {
+    const r = (s) => document.querySelector(s).getBoundingClientRect()
+    return { clear: r('.pqv-clear'), not: Array.from(document.querySelectorAll('.pqv-searchgroup .pqv-toggle')).at(-1).getBoundingClientRect(), undo: r('.pqv-undo') }
+  })
+  check('it sits right of NOT and left of undo', pos.clear.left >= pos.not.right && pos.clear.right <= pos.undo.left && Math.abs(pos.clear.top - pos.not.top) < 4, true)
+  await clear.click()
+  await p.waitForTimeout(300)
+  check('nothing moves when it goes again', await xs(), before)
+  // narrow: it shares the search's row
+  await p.setViewportSize({ width: 375, height: 760 })
+  await p.locator('.pqv-hcell[data-name="age"] input').first().fill('40')
+  await p.waitForTimeout(400)
+  const row = await p.evaluate(() => {
+    const s = document.querySelector('.pqv-searchgroup').getBoundingClientRect()
+    const c = document.querySelector('.pqv-clear').getBoundingClientRect()
+    return Math.abs(s.top - c.top) < 6 && c.right <= window.innerWidth
+  })
+  check('narrow: Clear filters on the search row', row, true)
+  await ctx.close()
+}
+
 check('no console errors', errors.length, 0)
 if (errors.length) console.log(errors.slice(0, 5).join('\n'))
 const passed = results.filter(Boolean).length

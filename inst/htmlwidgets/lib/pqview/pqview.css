@@ -2369,11 +2369,26 @@ select.pqv-input {
     display: none;
   }
 
+  /* the search has the second row to itself; Clear filters joins it at its
+     right while it shows */
   .pqv-toolbar > .pqv-searchgroup {
     order: 4;
     flex: 1 1 100%;
     min-width: 0;
     max-width: none;
+  }
+
+  .pqv-toolbar.pqv-has-clear > .pqv-searchgroup {
+    flex-basis: calc(100% - 112px);
+  }
+
+  .pqv-toolbar > .pqv-clear {
+    order: 4;
+    flex: none;
+    width: 106px;
+    overflow: hidden;
+    padding: 0 6px;
+    text-overflow: ellipsis;
   }
 
   .pqv-tright > .pqv-btn:not(.pqv-viewsbtn) {

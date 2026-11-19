@@ -369,9 +369,11 @@ function mountInstance(el, x, ctx = {}) {
       pickerBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, fullBtn),
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
+      // Right of the search, in the free space: showing or hiding it moves nothing else.
+      clearBtn,
       // One group, so it wraps as a unit and stays at the right.
       h('div', { class: 'pqv-tright' },
-        h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
+        h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), countsBtn, markBtn, exportBtn,
         h('div', { class: 'pqv-tsep', 'aria-hidden': 'true' }),
         viewsBtn))
 
@@ -559,6 +561,7 @@ function mountInstance(el, x, ctx = {}) {
           return isActive(c, spec) || hasOptions(spec) || spec.contains !== '' || spec.minText !== '' || spec.maxText !== ''
         })
       clearBtn.hidden = !filtered
+      toolbar.classList.toggle('pqv-has-clear', filtered)
       let orActive = 0
       for (const c of state.cols) {
         const spec = getSpec(c.name)
