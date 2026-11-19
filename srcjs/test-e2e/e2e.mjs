@@ -57,7 +57,9 @@ console.log('timings (ms):', JSON.stringify(timings, (k, v) => (typeof v === 'nu
 const pqv = page.locator('.pqv')
 const undoBtn = page.locator('.pqv-undo .pqv-btn').nth(0)
 const redoBtn = page.locator('.pqv-undo .pqv-btn').nth(1)
-const step = () => page.waitForTimeout(650)
+// Waits for debounced updates; GitHub's machines (CI set) are slower.
+const slow = process.env.CI ? 3 : 1
+const step = () => page.waitForTimeout(650 * slow)
 const toggleBtn = (text) => page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true })
 // Picks a choice in the Appearance window, opening it first if needed.
 const lookBtn = page.locator('.pqv-header .pqv-pref-look')
@@ -72,7 +74,7 @@ const exportAs = async (format) => {
   await page.keyboard.press('Escape')
   return d
 }
-const settle = () => page.waitForTimeout(180)
+const settle = () => page.waitForTimeout(180 * slow)
 const count = async () => +(/^([\d,]+)/.exec(await page.locator('.pqv-status').innerText())[1].replace(/,/g, ''))
 const lastCompute = () => page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastCompute.toFixed(2))
 const hcell = (name) => page.locator(`.pqv-hcell[data-name="${name}"]`)
@@ -1006,12 +1008,13 @@ check('no pinned columns left', await page.locator('.pqv-hcell.pqv-hpin[data-nam
 await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollTop = 0; g.scroller.scrollLeft = 0; g.render() })
 const incomeIdx = (await headNames()).indexOf('income') + 1
 const incomeBefore = (await firstRow())[incomeIdx]
+await step() // the column changes above are their own undo step
 await hcell('income').locator('.pqv-opt').click()
 await page.locator('.pqv-opts select[aria-label="income decimals"]').selectOption('2')
 await page.locator('.pqv-opt-format input[type=checkbox]').check()
 check('format options stay open while changing', await page.locator('.pqv-opts').isVisible(), true)
 await page.keyboard.press('Escape')
-await settle()
+await step() // and the format is its own step
 const incomeRaw = await page.evaluate(() => { const p = document.querySelector('.pqv').pqview; return p.ds.peek('income').num[p.state.view[0]] })
 const want = incomeRaw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 check('income shown with 2 decimals and separators', (await firstRow())[incomeIdx], want)
@@ -1021,10 +1024,12 @@ await settle()
 check('filters still use plain numbers', await count(), expected.total - expected.income_under_100k - expected.income_na)
 await clear()
 await step()
-await undoBtn.click()
-await settle()
-await undoBtn.click()
-await settle()
+// Undo until the format is gone: how many steps that takes depends on whether
+// the format and the filter were recorded together (timing).
+for (let k = 0; k < 4 && await page.evaluate(() => document.querySelector('.pqv').pqview.state.formats.has('income')); k++) {
+  await undoBtn.click()
+  await settle()
+}
 check('undo removes the format', (await firstRow())[incomeIdx], incomeBefore)
 await redoBtn.click()
 await settle()
