@@ -60,7 +60,7 @@ const redoBtn = page.locator('.pqv-undo .pqv-btn').nth(1)
 const step = () => page.waitForTimeout(650)
 const toggleBtn = (text) => page.locator('.pqv-switches .pqv-toggle').getByText(text, { exact: true })
 // Picks a choice in the Appearance window, opening it first if needed.
-const lookBtn = page.locator('.pqv-header .pqv-pref')
+const lookBtn = page.locator('.pqv-header .pqv-pref-look')
 const lookPanel = page.locator('.pqv-appearance')
 const pickLook = async (group, value) => {
   if (!(await lookPanel.isVisible())) await lookBtn.click()
@@ -409,8 +409,12 @@ await page.locator('.pqv-pitem[data-name="measure_03"] input').check()
 await settle()
 check('ticked column joins the selected group last', (await pickNames('.pqv-psel')).slice(-1)[0], 'measure_03')
 check('ticked column appears at the right of the table', (await headNames()).slice(-1)[0], 'measure_03')
-// drag measure_03 by its grip to just above 'comment'
-await page.locator('.pqv-pitem[data-name="measure_03"]').scrollIntoViewIfNeeded()
+// drag measure_03 by its grip to just above 'comment'; both fully in view
+// first, so the list does not scroll itself (near its edges) during the drag
+await page.locator('.pqv-plist').evaluate((list) => {
+  const item = list.querySelector('.pqv-pitem[data-name="comment"]')
+  list.scrollTop += item.getBoundingClientRect().top - list.getBoundingClientRect().top - 40
+})
 const src = await page.locator('.pqv-pitem[data-name="measure_03"] .pqv-grip').boundingBox()
 const dst = await page.locator('.pqv-pitem[data-name="comment"]').boundingBox()
 await page.mouse.move(src.x + src.width / 2, src.y + src.height / 2)
@@ -1033,9 +1037,10 @@ await clear()
 const shinyIn = await page.evaluate(async () => {
   const sent = {}
   window.Shiny = { setInputValue: (k, v) => { sent[k] = v } }
-  const el = document.querySelector('.pqv')
-  el.id = 'tbl'
-  const p = el.pqview
+  const shell = document.querySelector('.pqv-shell')
+  const oldId = shell.id
+  shell.id = 'tbl'
+  const p = document.querySelector('.pqv').pqview
   await p.runQuery()
   p.openDetail(4)
   await new Promise((r) => setTimeout(r, 500))
@@ -1043,7 +1048,7 @@ const shinyIn = await page.evaluate(async () => {
   p.closeDetail()
   out.closed = sent.tbl_row
   delete window.Shiny
-  el.removeAttribute('id')
+  shell.id = oldId
   return out
 })
 check('Shiny: filtered row numbers', shinyIn.rows, expected.total)
@@ -1106,7 +1111,7 @@ check('scrolling reaches the last row', scroll.lastRow, '100000')
 
 // ---- sort and counts given in R ----------------------------------------------
 const remount = await page.evaluate(async () => {
-  const el = document.querySelector('.pqv')
+  const el = document.querySelector('.pqv-shell')
   const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
   const api = window.PQView.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'], pin: ['comment'] })
   await api.ready
@@ -1150,8 +1155,11 @@ const box = (loc) => loc.boundingBox()
   const maxRight = Math.max(...rights.map((r) => r.right))
   check('toolbar: Views is the right-most control', rights.find((r) => r.views).right, maxRight)
   const exportBox = await box(page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }))
+  const countsBox = await box(page.locator('.pqv-toolbar .pqv-btn', { hasText: 'Counts' }))
+  const markBox = await box(page.locator('.pqv-toolbar .pqv-btn', { hasText: /^Mark$/ }))
   const undoBox = await box(undoBtn)
-  check('toolbar: undo, Counts, Mark, Export to the right of the search', undoBox.x > searchBox.x + searchBox.width && exportBox.x > undoBox.x, true)
+  check('toolbar: undo, Counts, Mark, Export to the right of the search, in that order',
+    undoBox.x > searchBox.x + searchBox.width && countsBox.x > undoBox.x && markBox.x > countsBox.x && exportBox.x > markBox.x, true)
 }
 
 // the row count sits in the top band, left of the data size
@@ -1288,7 +1296,7 @@ await page.keyboard.press('Escape')
 // shown, even without a title or notes and outside a page of its own
 {
   const offset = await page.evaluate(async () => {
-    const el = document.querySelector('.pqv')
+    const el = document.querySelector('.pqv-shell')
     const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
     const top = () => el.querySelector('.pqv-toolbar').getBoundingClientRect().top
     await window.PQView.mount(el, { ...x, top_offset: 0 }).ready
@@ -1306,9 +1314,9 @@ await page.keyboard.press('Escape')
       diff: Math.round(t40 - t0),
       shown: !!header && header.getBoundingClientRect().height > 0,
       count: header ? header.querySelector('.pqv-status').textContent : '',
-      standalone: host.classList.contains('pqv-standalone'),
+      standalone: host.querySelector('.pqv').classList.contains('pqv-standalone'),
     }
-    host.pqview.destroy()
+    host.pqshell.destroy()
     host.remove()
     return out
   })
@@ -1333,7 +1341,7 @@ await page.keyboard.press('Escape')
   check('375px: search on its own row, actions below', row2 > row1 + 20 && row3 > row2 + 20, true)
   check('375px: Export on the actions row', Math.abs((await top('.pqv-toolbar .pqv-btn:text("Export")')) - row3) <= 2, true)
   const overlap = await spage.evaluate(() => {
-    const els = Array.from(document.querySelectorAll('.pqv-toolbar > *, .pqv-header .pqv-status, .pqv-header .pqv-size, .pqv-header .pqv-pref'))
+    const els = Array.from(document.querySelectorAll('.pqv-toolbar > *, .pqv-header .pqv-status, .pqv-header .pqv-size, .pqv-header .pqv-pref-look'))
       .filter((e) => e.offsetParent !== null && !e.classList.contains('pqv-tsep')).map((e) => e.getBoundingClientRect())
     for (let a = 0; a < els.length; a++) {
       for (let b = a + 1; b < els.length; b++) {
@@ -1354,7 +1362,7 @@ await page.keyboard.press('Escape')
   check('expand button now says less', await more.innerText(), 'less')
   await more.click()
   check('collapses again', await more.getAttribute('aria-expanded'), 'false')
-  await spage.locator('.pqv-header .pqv-pref').click()
+  await spage.locator('.pqv-header .pqv-pref-look').click()
   const pop = await spage.locator('.pqv-appearance').boundingBox()
   check('375px: Appearance window fits on screen', pop.x >= 0 && pop.x + pop.width <= 375 && pop.y + pop.height <= 812, true)
   if (shots) await spage.screenshot({ path: `${shots}/${engine}-08-narrow-appearance.png` })
@@ -1397,7 +1405,10 @@ await page.keyboard.press('Escape')
   check('Other All appends the others in file order', (await headNames()).join('|'), appended.join('|'))
   check('Other All: picker count updates', await pcount(), `${fileOrder.length} of ${fileOrder.length} selected`)
   check('Other columns heading hides when it is empty', await gother.isVisible(), false)
-  check('focus moves to In table None after Other All', await page.evaluate(() => document.activeElement?.textContent), 'None')
+  check('focus moves to In table None after Other All', await page.evaluate(() => {
+    const a = document.activeElement
+    return !!a && a.classList.contains('pqv-pgroup-link') && !!a.closest('.pqv-pgroup') && a.textContent === 'None'
+  }), true)
 
   // with a search typed, the links act on just the found columns
   const base = ['comment', 'age', 'measure_02', 'measure_05', 'region']
@@ -1434,7 +1445,8 @@ await page.keyboard.press('Escape')
   await page.keyboard.press('Enter')
   await settle()
   check('Other All by keyboard', (await headNames()).length, fileOrder.length)
-  check('list keeps its scroll position', Math.abs(await plist.evaluate((e) => e.scrollTop) - top0) <= 30, true)
+  // (Chrome keeps the spot exactly; Safari has no scroll anchoring and moves a little)
+  check('list does not jump back to the top', await plist.evaluate((e) => e.scrollTop) >= top0 * 0.75, true)
   // focus moved to the In table None link, so Enter again removes them all
   await page.keyboard.press('Enter')
   await settle()
@@ -1629,7 +1641,7 @@ check('missing values: select reachable by Tab', await naSelect.evaluate((e) => 
 await page.keyboard.press('Escape')
 
 await setMissing('NA')
-const estTitle = await page.locator('.pqv-sizes .pqv-size').nth(1).getAttribute('title')
+const estTitle = await page.locator('.pqv-size-export').getAttribute('title')
 check('missing values: export estimate knows the setting', /written as "NA"/.test(estTitle), true)
 let naCsv = await csvColumn('income')
 check('missing values NA: CSV rows', naCsv.rows.length - 1, expected.region_exact_west)
@@ -1663,7 +1675,7 @@ if (storage) {
 await setMissing('empty')
 const emptyCsv = await csvColumn('income')
 check('missing values Empty: missing incomes are blank', emptyCsv.cells.filter((c) => c.v === '' && !c.q).length, westNulls.income)
-check('missing values Empty: no NA text', emptyCsv.text.includes('NA,'), false)
+check('missing values Empty: no unquoted NA cells', emptyCsv.cells.filter((c) => c.v === 'NA' && !c.q).length, 0)
 
 // the menu with the setting fits a phone screen
 const phone = await browser.newContext({ viewport: { width: 375, height: 760 } })
@@ -1681,6 +1693,426 @@ if (shots) await ppage.screenshot({ path: `${shots}/${engine}-06-export-missing-
 check('missing values: menu fits at 375px', fit.inside && fit.box, true)
 check('missing values: no horizontal scroll at 375px', fit.scroll, true)
 await phone.close()
+
+// ---- 0.12 fixes: scaled-scroll spacing, toolbar and header at mid widths, short export menu ----
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const pick = async (group, value) => {
+    if (!(await p.locator('.pqv-appearance').isVisible())) await p.locator('.pqv-header .pqv-pref-look').click()
+    await p.locator(`.pqv-appearance .pqv-ap-group[aria-label="${group}"] .pqv-ap-choice[data-value="${value}"]`).click()
+    await p.waitForTimeout(150)
+  }
+  // 2,000,000 rows (the demo's rows repeated) makes the grid map the scroll position proportionally.
+  const firstShown = () => p.evaluate(() => {
+    const g = document.querySelector('.pqv').pqview.grid
+    const geo = g.geom()
+    return Math.round(g.topFromScroll(g.scroller.scrollTop, geo) / geo.rowH)
+  })
+  await p.evaluate(() => {
+    const api = document.querySelector('.pqv').pqview
+    const n = api.ds.n
+    const v = new Uint32Array(2000000)
+    for (let k = 0; k < v.length; k++) v[k] = k % n
+    api.grid.setView(v)
+    api.grid.render()
+    const g = api.grid
+    const geo = g.geom()
+    g.scroller.scrollTop = g.scrollFromTop(1000000 * geo.rowH, geo)
+    g.render()
+  })
+  check('2M rows: the grid scales its scrolling', await p.evaluate(() => document.querySelector('.pqv').pqview.grid.geom().scaled), true)
+  const before = await firstShown()
+  check('2M rows: scrolled to about row 1,000,000', Math.abs(before - 1000000) < 50, true)
+  for (const d of ['roomy', 'compact', 'normal']) {
+    await pick('Row spacing', d)
+    check(`2M rows: same first row after ${d} spacing`, Math.abs((await firstShown()) - before) <= 1, true)
+  }
+  await p.keyboard.press('Escape')
+
+  // dragged column widths survive a text-size change
+  const wOf = () => p.evaluate(() => document.querySelector('.pqv').pqview.grid.widths.get('state'))
+  const handle = p.locator('.pqv-hcell[data-name="state"] .pqv-resizer')
+  const hb = await handle.boundingBox()
+  await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
+  await p.mouse.down()
+  await p.mouse.move(hb.x + hb.width / 2 + 90, hb.y + hb.height / 2, { steps: 4 })
+  await p.mouse.up()
+  const dragged = await wOf()
+  await pick('Text size', 'large')
+  check('dragged width kept after a text-size change', await wOf(), dragged)
+  await pick('Text size', 'normal')
+  await p.keyboard.press('Escape')
+
+  // toolbar and header at widths where they used to wrap badly
+  for (const w of [900, 750, 600]) {
+    await p.evaluate((w) => { document.querySelector('.pqv').style.width = w + 'px' }, w)
+    await p.waitForTimeout(150)
+    const r = await p.evaluate(() => {
+      const rect = (s) => document.querySelector(s).getBoundingClientRect()
+      const root = rect('.pqv')
+      const views = rect('.pqv-viewsbtn')
+      const exp = Array.from(document.querySelectorAll('.pqv-toolbar .pqv-btn')).find((b) => b.textContent === 'Export').getBoundingClientRect()
+      const sep = rect('.pqv-tsep')
+      const buttons = Array.from(document.querySelectorAll('.pqv-toolbar button')).filter((b) => b.offsetParent).map((b) => b.getBoundingClientRect())
+      const status = rect('.pqv-status')
+      const more = document.querySelector('.pqv-notes-more')
+      const mr = more && !more.hidden ? more.getBoundingClientRect() : null
+      const pal = rect('.pqv-pref-look')
+      return {
+        viewsRight: Math.round(views.right) >= Math.max(...buttons.map((b) => Math.round(b.right))),
+        viewsWithExport: Math.abs(views.top - exp.top) < 2,
+        sepWithViews: Math.abs((sep.top + sep.bottom) / 2 - (views.top + views.bottom) / 2) < 4 && sep.right <= views.left,
+        inside: buttons.every((b) => b.left >= root.left - 1 && b.right <= root.right + 1),
+        pillClear: !mr || mr.right <= status.left || mr.bottom <= status.top || mr.top >= status.bottom,
+        palette: pal.left >= root.left && pal.right <= root.right + 1,
+      }
+    })
+    check(`toolbar at ${w}px: Views is right-most`, r.viewsRight, true)
+    check(`toolbar at ${w}px: Views stays on the line with Export`, r.viewsWithExport, true)
+    check(`toolbar at ${w}px: the separator sits just before Views`, r.sepWithViews, true)
+    check(`toolbar at ${w}px: every button inside the widget`, r.inside, true)
+    check(`header at ${w}px: the notes button clear of the row count`, r.pillClear, true)
+    check(`header at ${w}px: the Appearance button not clipped`, r.palette, true)
+  }
+  await p.evaluate(() => { document.querySelector('.pqv').style.width = '' })
+
+  // a short widget: the export menu's message stays in view
+  await p.evaluate(() => { document.querySelector('.pqv').style.height = '400px' })
+  await p.waitForTimeout(150)
+  await p.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+  const em = await p.evaluate(() => {
+    const pop = document.querySelector('.pqv-exportmenu')
+    const root = document.querySelector('.pqv').getBoundingClientRect()
+    const r = pop.getBoundingClientRect()
+    return {
+      fits: r.bottom <= root.bottom + 1,
+      msgAfterTitle: pop.children[1].classList.contains('pqv-export-msg'),
+      listScrolls: getComputedStyle(pop.querySelector('.pqv-export-list')).overflowY === 'auto',
+    }
+  })
+  check('short widget: export menu fits', em.fits, true)
+  check('export menu: the message sits under the title', em.msgAfterTitle, true)
+  check('export menu: the format list scrolls', em.listScrolls, true)
+  await p.keyboard.press('Escape')
+
+  // focus is visible on filled (selected / pressed) controls
+  await p.locator('.pqv-header .pqv-pref-look').click()
+  await p.locator('.pqv-appearance .pqv-ap-group[aria-label="Text size"] .pqv-ap-choice[aria-checked="true"]').focus()
+  await p.keyboard.press('ArrowRight')
+  await p.keyboard.press('ArrowLeft')
+  const ring = await p.evaluate(() => getComputedStyle(document.activeElement).boxShadow)
+  check('focus ring drawn on the selected Text size option', /inset/.test(ring), true)
+  await p.keyboard.press('Escape')
+  await ctx.close()
+}
+
+// ---- keyboard: cell cursor, selection and copy, shortcuts, palette, minimal view ----
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  // Record what is copied (the copy goes through a hidden text box).
+  await p.evaluate(() => {
+    window.__copied = []
+    const exec = document.execCommand.bind(document)
+    document.execCommand = (cmd, ...rest) => {
+      if (cmd === 'copy') window.__copied.push(document.activeElement && document.activeElement.value)
+      return exec(cmd, ...rest)
+    }
+  })
+  const g = (fn) => p.evaluate(fn)
+  const cur = () => g(() => {
+    const gr = document.querySelector('.pqv').pqview.grid
+    return gr.cursor ? `${gr.cursor.pos}:${gr.cursor.name}` : null
+  })
+  const names = await g(() => document.querySelector('.pqv').pqview.state.cols.map((c) => c.name))
+  const cellBox = async (pos, name) => {
+    const r = await p.evaluate(({ pos, name }) => {
+      const gr = document.querySelector('.pqv').pqview.grid
+      const c = gr.colIndex(name)
+      const sc = gr.scroller.getBoundingClientRect()
+      const geo = gr.geom()
+      const top = gr.topFromScroll(gr.scroller.scrollTop, geo)
+      const pinW = gr.lefts[gr.pinCount + 1]
+      const left = c <= gr.pinCount ? gr.lefts[c] : gr.lefts[c] - gr.scroller.scrollLeft
+      return { x: sc.left + Math.max(left, c <= gr.pinCount ? 0 : pinW) + 10, y: sc.top + gr.head.offsetHeight + pos * geo.rowH - top + geo.rowH / 2 }
+    }, { pos, name })
+    return r
+  }
+  const age = names.indexOf('age')
+  let b = await cellBox(0, 'age')
+  await p.mouse.click(b.x, b.y)
+  check('click puts the cursor on the cell', await cur(), '0:age')
+  await p.waitForTimeout(60)
+  check('the cursor box is drawn', await p.locator('.pqv-cur:not([hidden])').count() >= 1, true)
+  await p.keyboard.press('ArrowDown')
+  await p.keyboard.press('ArrowDown')
+  await p.keyboard.press('ArrowRight')
+  check('arrow keys move the cursor', await cur(), `2:${names[age + 1]}`)
+  await p.keyboard.press('Shift+ArrowDown')
+  await p.keyboard.press('Shift+ArrowDown')
+  await p.keyboard.press('Shift+ArrowLeft')
+  const range = await g(() => {
+    const r = document.querySelector('.pqv').pqview.grid.range()
+    return { r0: r.r0, r1: r.r1, cols: r.cols.map((c) => c.name).join(), cells: r.cells }
+  })
+  check('Shift+arrows select a block', `${range.r0}-${range.r1} ${range.cols} ${range.cells}`, `2-4 ${names[age]},${names[age + 1]} 6`)
+  await p.waitForTimeout(150)
+  const want = await g(() => {
+    const api = document.querySelector('.pqv').pqview
+    const r = api.grid.range()
+    let sum = 0
+    let k = 0
+    for (const col of r.cols) {
+      for (let q = r.r0; q <= r.r1; q++) {
+        const i = api.state.view[q]
+        if (col.type === 'number' && !col.isNull[i]) {
+          sum += col.num[i]
+          k++
+        }
+      }
+    }
+    return `6 cells · sum ${sum.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+  })
+  check('the readout shows the count and sum', (await p.locator('.pqv-selinfo').innerText()).startsWith(want), true)
+  await p.keyboard.press('Control+c')
+  await p.waitForTimeout(100)
+  const plain = (await g(() => window.__copied.at(-1))) || ''
+  check('Ctrl+C copies the block without names', plain.trimEnd().split('\n').map((l) => l.split('\t').length).join(), '2,2,2')
+  await p.keyboard.press('Control+Shift+c')
+  await p.waitForTimeout(100)
+  const withHead = (await g(() => window.__copied.at(-1))) || ''
+  check('Ctrl+Shift+C adds the column names', withHead.split('\n')[0], `${names[age]}\t${names[age + 1]}`)
+  check('the readout reports the copy', /Copied 6 cells/.test(await p.locator('.pqv-selinfo').innerText()), true)
+  await p.keyboard.press('Escape')
+  check('Esc collapses the block to the cursor', await g(() => document.querySelector('.pqv').pqview.grid.range().cells), 1)
+  await p.keyboard.press('Control+End')
+  const n = await g(() => document.querySelector('.pqv').pqview.state.view.length)
+  check('Ctrl+End goes to the last cell', await cur(), `${n - 1}:${names[names.length - 1]}`)
+  check('the last row is scrolled into view', await p.locator('.pqv-cur:not([hidden])').count() >= 1, true)
+  await p.keyboard.press('Control+Home')
+  check('Ctrl+Home goes to the first cell', await cur(), `0:${names[0]}`)
+  await p.keyboard.press('Enter')
+  await p.waitForTimeout(150)
+  check('Enter opens the row panel', await p.locator('.pqv-detail').isVisible(), true)
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(100)
+  check('Esc closes the row panel', await p.locator('.pqv-detail').isVisible(), false)
+
+  // drag to select
+  const a = await cellBox(1, names[1])
+  b = await cellBox(4, names[2])
+  await p.mouse.move(a.x, a.y)
+  await p.mouse.down()
+  await p.mouse.move(b.x, b.y, { steps: 5 })
+  await p.mouse.up()
+  check('dragging selects a block', await g(() => document.querySelector('.pqv').pqview.grid.range().cells), 8)
+
+  // shortcuts
+  await p.locator('.pqv-scroller').focus()
+  await p.keyboard.press('?')
+  check('? opens the shortcut sheet', await p.locator('.pqv-keys').isVisible(), true)
+  await p.keyboard.press('Escape')
+  check('Esc closes it', await p.locator('.pqv-keys').count(), 0)
+  await p.keyboard.press('g')
+  await p.locator('.pqv-goto input').fill('500')
+  await p.keyboard.press('Enter')
+  check('G goes to a row by its number', await g(() => document.querySelector('.pqv').pqview.grid.range().row), 499)
+  await p.keyboard.press('/')
+  check('/ focuses the search', await g(() => document.activeElement.classList.contains('pqv-search')), true)
+  await p.locator('.pqv-scroller').focus()
+
+  // minimal view
+  await p.keyboard.press('m')
+  check('M: minimal view hides the top band', await p.locator('.pqv-header').isVisible(), false)
+  check('M: and the toolbar', await p.locator('.pqv-toolbar').isVisible(), false)
+  check('M: and the column list', await p.locator('.pqv-picker').isVisible(), false)
+  check('M: the table stays, with its filters', await p.locator('.pqv-hcell input').first().isVisible(), true)
+  check('M: the corner button shows it is on', await p.locator('.pqv-corner').getAttribute('aria-pressed'), 'true')
+  await p.keyboard.press('e')
+  const em = await p.evaluate(() => {
+    const pop = document.querySelector('.pqv-exportmenu')
+    if (!pop) return null
+    const r = pop.getBoundingClientRect()
+    const root = document.querySelector('.pqv').getBoundingClientRect()
+    return r.top >= root.top && r.left >= root.left && r.right <= root.right + 1
+  })
+  check('E in minimal view opens Export from the corner', em, true)
+  await p.keyboard.press('Escape')
+  await p.locator('.pqv-corner').click()
+  check('the corner button brings the toolbar back', await p.locator('.pqv-toolbar').isVisible(), true)
+
+  // command palette
+  await p.locator('.pqv-scroller').focus()
+  await p.keyboard.press('Control+k')
+  check('Ctrl+K opens the palette', await p.locator('.pqv-palette').isVisible(), true)
+  await p.keyboard.type('theme vintage')
+  await p.keyboard.press('Enter')
+  check('palette: Theme: Vintage', await g(() => document.querySelector('.pqv').dataset.theme), 'vintage')
+  check('palette closes after running', await p.locator('.pqv-palette').count(), 0)
+  await p.keyboard.press('Control+k')
+  await p.keyboard.type('go to column measure_07')
+  await p.keyboard.press('Enter')
+  await p.waitForTimeout(400)
+  check('palette: Go to column shows and selects it', (await cur() || '').endsWith(':measure_07'), true)
+  await p.keyboard.press('Control+k')
+  await p.keyboard.type('#120')
+  check('palette: a number offers Go to row', await p.locator('.pqv-palette-item[aria-selected="true"] .pqv-palette-label').innerText(), 'Go to row 120')
+  await p.keyboard.press('Enter')
+  check('palette: Go to row', await g(() => document.querySelector('.pqv').pqview.grid.range().row), 119)
+  await p.keyboard.press('Control+k')
+  await p.keyboard.press('Escape')
+  check('Esc closes the palette', await p.locator('.pqv-palette').count(), 0)
+  await g(() => document.querySelector('.pqv').pqview.appearance.reset())
+  await ctx.close()
+}
+
+// ---- opening files: tabs, drag and drop, errors, the blank page ------------------------
+{
+  const { mkdtempSync, writeFileSync } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { buildColumn } = await import('../src/store.js')
+  const { toXLSX } = await import('../src/export.js')
+  const dir = mkdtempSync(path.join(tmpdir(), 'pqv-open-'))
+  const csv = path.join(dir, 'people.csv')
+  writeFileSync(csv, 'name,age,joined,active\nAda,36,2024-01-05,TRUE\nGrace,NA,2023-12-31,FALSE\n"Lin, Q",41,,TRUE\n')
+  const tsv = path.join(dir, 'plain.tsv')
+  writeFileSync(tsv, 'a\tb\n1\tx\n2\ty\n')
+  const xlsx = path.join(dir, 'book.xlsx')
+  const xcols = [buildColumn('n', [1, 2, 3]), buildColumn('when', [Date.UTC(2024, 0, 1), Date.UTC(2024, 5, 30), null], { kind: 'date' })]
+  writeFileSync(xlsx, Buffer.from(await (await toXLSX(xcols, Uint32Array.of(0, 1, 2), {})).arrayBuffer()))
+  const zstd = path.join(root, 'srcjs/test/fixtures/zstd.parquet')
+  const xls = path.join(dir, 'old.xls')
+  writeFileSync(xls, 'not really excel')
+
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const shown = '.pqv-shell > .pqv:not([hidden])'
+  const tabNames = () => p.locator(`${shown} .pqv-tab`).allInnerTexts()
+  const openWith = async (files, how = 'key') => {
+    const chooser = p.waitForEvent('filechooser')
+    if (how === 'key') {
+      await p.locator(`${shown} .pqv-scroller`).focus()
+      await p.keyboard.press('o')
+    } else await p.locator(`${shown} .pqv-pref-open`).click()
+    await (await chooser).setFiles(files)
+  }
+  const waitTabs = (k) => p.waitForFunction((k) => document.querySelectorAll('.pqv-shell > .pqv').length === k &&
+    document.querySelector('.pqv-shell').pqview.timings && document.querySelector('.pqv-shell').pqview.timings.firstTable, k, { timeout: 15000 })
+  const activeApi = (fn) => p.evaluate(fn)
+
+  await openWith([csv])
+  await waitTabs(2)
+  check('open: the file becomes a second tab', (await tabNames()).join('|'), 'Synthetic demo|people.csv')
+  check('open: tabs show once there are two', await p.locator(`${shown} .pqv-tabs`).isVisible(), true)
+  check('open: its rows are counted', await p.locator(`${shown} .pqv-status`).innerText(), '3 rows')
+  check('open: CSV column types are guessed', await activeApi(() => document.querySelector('.pqv-shell').pqview.ds.fields.map((f) => f.tag).join()), 'chr,int,date,lgl')
+  check('open: quoted text with a comma survives', await activeApi(async () => {
+    const api = document.querySelector('.pqv-shell').pqview
+    const col = await api.ds.column('name')
+    return col.levels ? col.levels[col.codes[2]] : null
+  }), 'Lin, Q')
+  await p.locator(`${shown} .pqv-tab`).first().click()
+  check('tabs: switching back shows the demo', await p.locator(`${shown} .pqv-status`).innerText(), `${expected.total.toLocaleString('en-US')} rows`)
+
+  await openWith([tsv, xlsx, zstd], 'button')
+  await waitTabs(5)
+  await p.waitForFunction(() => document.querySelector('.pqv-shell').pqview.ds.n === 5, null, { timeout: 15000 })
+  check('open: several files at once, each a tab', (await tabNames()).join('|'), 'Synthetic demo|people.csv|plain.tsv|book.xlsx|zstd.parquet')
+  check('open: zstd parquet decodes', await p.locator(`${shown} .pqv-status`).innerText(), '5 rows')
+  await p.locator(`${shown} .pqv-tab`, { hasText: 'book.xlsx' }).click()
+  check('open: Excel dates keep their type', await activeApi(() => document.querySelector('.pqv-shell').pqview.ds.fields.map((f) => f.tag).join()), 'int,date')
+
+  // undo stays with its tab
+  await p.locator(`${shown} .pqv-search`).fill('2')
+  await p.waitForTimeout(400)
+  await p.locator(`${shown} .pqv-scroller`).focus()
+  await p.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
+  await p.waitForTimeout(200)
+  check('undo acts on the tab in view', await p.locator(`${shown} .pqv-search`).inputValue(), '')
+  check('other tabs are untouched', await p.evaluate(() => document.querySelector('.pqv').pqview.state.search), '')
+
+  // closing a tab
+  await p.locator(`${shown} .pqv-tabwrap-on .pqv-tabclose`).click()
+  check('close: the tab goes', (await tabNames()).join('|'), 'Synthetic demo|people.csv|plain.tsv|zstd.parquet')
+  check('close: the first tab cannot be closed', await p.locator(`${shown} .pqv-tabwrap`).first().locator('.pqv-tabclose').count(), 0)
+
+  // drop a file
+  await p.evaluate(() => {
+    const dt = new DataTransfer()
+    dt.items.add(new File(['k,v\n1,a\n2,b\n'], 'dropped.csv', { type: 'text/csv' }))
+    const shell = document.querySelector('.pqv-shell')
+    shell.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true, cancelable: true }))
+    shell.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }))
+  })
+  await waitTabs(5)
+  check('drop: a dropped file opens as a tab', (await tabNames()).at(-1), 'dropped.csv')
+  check('drop: the hint goes away', await p.locator('.pqv-drop').count(), 0)
+
+  // a file that cannot be read
+  await openWith([xls])
+  await p.waitForSelector(`${shown} .pqv-toast-bad`)
+  check('open: an old .xls file says why it cannot be read', /Could not open old\.xls: .*\.xls/.test(await p.locator(`${shown} .pqv-toast`).innerText()), true)
+  check('open: no tab for it', await p.locator('.pqv-shell > .pqv').count(), 5)
+
+  // the blank page
+  await p.evaluate(() => window.PQView.mount(document.querySelector('.pqv-shell'), { title: 'Open data' }))
+  check('blank: a page that opens files', await p.locator('.pqv-blank').isVisible(), true)
+  check('blank: titled', await p.locator('.pqv-blank-title').innerText(), 'Open data')
+  const chooser = p.waitForEvent('filechooser')
+  await p.locator('.pqv-blank-open').click()
+  await (await chooser).setFiles([csv])
+  await waitTabs(1)
+  check('blank: the file replaces it', await p.locator('.pqv-blank').count(), 0)
+  check('blank: one tab, no tab strip', await p.locator(`${shown} .pqv-tabs`).isVisible(), false)
+  check('blank: the opened file can be closed again', await p.evaluate(() => document.querySelector('.pqv-shell').pqshell.tabs[0].closable), true)
+  await p.evaluate(() => document.querySelector('.pqv-shell').pqshell.closeTab(0))
+  check('blank: closing the last file brings the blank page back', await p.locator('.pqv-blank').isVisible(), true)
+  await ctx.close()
+}
+
+// ---- password protection ------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(pathToFileURL(path.join(root, 'examples/demo-locked.html')).href)
+  await p.waitForSelector('.pqv-lock')
+  check('locked: asks for the password', await p.locator('.pqv-lock-input').isVisible(), true)
+  check('locked: shows the title only', await p.locator('.pqv-lock-title').innerText(), 'Locked demo')
+  check('locked: no table before unlocking', await p.locator('.pqv-toolbar, .pqv-scroller').count(), 0)
+  check('locked: the password box has the focus', await p.evaluate(() => document.activeElement.classList.contains('pqv-lock-input')), true)
+  await p.locator('.pqv-lock-input').fill('not it')
+  await p.keyboard.press('Enter')
+  await p.waitForFunction(() => /Wrong password/.test(document.querySelector('.pqv-lock-msg').textContent), null, { timeout: 15000 })
+  check('locked: a wrong password is refused', await p.locator('.pqv-lock-msg').innerText(), 'Wrong password. Try again.')
+  await p.locator('.pqv-lock-input').fill('pqview test')
+  await p.locator('.pqv-lock-btn').click()
+  await ready(p)
+  check('unlocked: the lock goes', await p.locator('.pqv-lock').count(), 0)
+  check('unlocked: the hidden WHERE query applies', await p.locator('.pqv-status').innerText(),
+    `${expected.locked_west.toLocaleString('en-US')} of ${expected.locked_rows.toLocaleString('en-US')} rows`)
+  check('unlocked: the hidden notes show', await p.locator('.pqv-notes').innerText(), 'Protected notes')
+  check('unlocked: factor levels came through', await p.evaluate(async () => {
+    const col = await document.querySelector('.pqv').pqview.ds.column('state')
+    return col.factor === true || !!col.levels
+  }), true)
+  await p.locator('.pqv-toolbar .pqv-btn', { hasText: 'Views' }).click()
+  check('unlocked: views are kept for the session only', await p.locator('.pqv-views-group').last().textContent(), 'Saved until the page is closed')
+  await p.keyboard.press('Escape')
+  check('unlocked: nothing about the data in browser storage', await p.evaluate(() =>
+    Object.keys(window.localStorage).filter((k) => /^pqview\.(marks|views)\./.test(k)).length), 0)
+  await ctx.close()
+}
 
 check('no console errors', errors.length, 0)
 if (errors.length) console.log(errors.slice(0, 5).join('\n'))

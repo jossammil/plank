@@ -67,7 +67,8 @@
 }
 
 .pqv-header .pqv-title {
-  flex: none;
+  /* gives way only once the notes have (their shrink weight is far larger) */
+  flex: 0 0.001 auto;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
@@ -97,8 +98,11 @@
 .pqv-headright {
   flex: none;
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: baseline;
-  gap: 14px;
+  gap: 4px 14px;
+  max-width: 100%;
 }
 
 .pqv-sizes {
@@ -113,7 +117,7 @@
   align-items: center;
   gap: 2px;
   align-self: center;
-  opacity: 0.6;
+  opacity: 0.8;
   transition: opacity 0.15s;
 }
 
@@ -2288,9 +2292,28 @@ select.pqv-input {
   font-size: 12px;
 }
 
-/* ---- narrow screens ------------------------------------------------------------ */
+/* ---- narrow widgets ------------------------------------------------------------ */
 
-@media (max-width: 560px) {
+/* Container queries follow the widget's own width, so a narrow widget on a wide
+   page (Quarto, R Markdown, Shiny) gets the narrow layout too. */
+.pqv {
+  container: pqv / inline-size;
+}
+
+/* In the top band the export size gives way first, then the data size. */
+@container pqv (max-width: 760px) {
+  .pqv-size-export {
+    display: none;
+  }
+}
+
+@container pqv (max-width: 620px) {
+  .pqv-size-data {
+    display: none;
+  }
+}
+
+@container pqv (max-width: 560px) {
   .pqv-header {
     flex-wrap: wrap;
     row-gap: 2px;
@@ -2310,12 +2333,18 @@ select.pqv-input {
   }
 
   /* Three rows: columns, the WHERE and See Query switches and views; the
-     search; then undo, clear and the actions. */
+     search; then undo, clear and the actions. The right-hand group joins the
+     toolbar's own rows. */
   .pqv-toolbar {
     gap: 6px;
   }
 
-  .pqv-toolbar > * {
+  .pqv-toolbar .pqv-tright {
+    display: contents;
+  }
+
+  .pqv-toolbar > *,
+  .pqv-tright > * {
     order: 5;
   }
 
@@ -2329,14 +2358,14 @@ select.pqv-input {
     border-right: 0;
   }
 
-  .pqv-toolbar > .pqv-btn.pqv-viewsbtn {
+  .pqv-tright > .pqv-viewsbtn {
     order: 3;
     flex: 0 1 auto;
     min-width: 0;
     margin-left: auto;
   }
 
-  .pqv-toolbar > .pqv-tsep {
+  .pqv-tright > .pqv-tsep {
     display: none;
   }
 
@@ -2347,11 +2376,7 @@ select.pqv-input {
     max-width: none;
   }
 
-  .pqv-toolbar > .pqv-undo {
-    margin-left: 0;
-  }
-
-  .pqv-toolbar > .pqv-btn:not(.pqv-viewsbtn):not(:first-child) {
+  .pqv-tright > .pqv-btn:not(.pqv-viewsbtn) {
     padding: 0 8px;
   }
 
@@ -3203,6 +3228,571 @@ select.pqv-input {
 }
 
 /* the message follows the setting, so it needs room above it */
-.pqv-export-na + .pqv-export-msg {
-  padding-top: 0;
+
+/* ---- 0.12 fixes: toolbar group, focus on filled controls, export menu ------- */
+
+/* undo through Views: one group that wraps as a unit and stays at the right */
+.pqv-tright {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.pqv-tright > .pqv-undo {
+  margin-left: 0;
+}
+
+/* An accent ring is invisible on an accent-filled control: ring it in the text
+   colour, outside, or (inside a clipped segmented group) inset. */
+.pqv-toggle[aria-pressed="true"]:focus-visible,
+.pqv-btn[aria-pressed="true"]:focus-visible,
+.pqv-viewsbtn.pqv-on:focus-visible,
+.pqv-ap-choice[aria-checked="true"]:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid var(--pqv-fg);
+  outline-offset: 2px;
+}
+
+.pqv-ap-seg .pqv-ap-choice[aria-checked="true"]:focus-visible,
+.pqv-toggle.pqv-cbars-opt[aria-pressed="true"]:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--pqv-accent), inset 0 0 0 4px var(--pqv-accent-fg);
+}
+
+/* the format list scrolls when the widget is short; title and result stay */
+.pqv-exportmenu .pqv-export-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.pqv-exportmenu .pqv-pop-title + .pqv-export-msg {
+  padding: 0 12px 4px;
+}
+
+/* ---- keyboard: cell cursor, selection, readout --------------------------------- */
+
+/* Dragging selects cells, not text (Ctrl/⌘+C copies the selection). */
+.pqv-canvas {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pqv-sel,
+.pqv-cur {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.pqv-sel {
+  border: 1px solid color-mix(in srgb, var(--pqv-accent) 55%, transparent);
+  background: color-mix(in srgb, var(--pqv-accent) 13%, transparent);
+}
+
+.pqv-cur {
+  border: 2px solid var(--pqv-accent);
+  border-radius: 2px;
+}
+
+/* dimmer while the table does not have the keyboard */
+.pqv-scroller:not(:focus) .pqv-cur {
+  border-color: color-mix(in srgb, var(--pqv-accent) 50%, transparent);
+}
+
+.pqv-selinfo {
+  max-width: 46ch;
+  overflow: hidden;
+  color: var(--pqv-accent);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pqv-selinfo.pqv-bad-text {
+  color: var(--pqv-bad);
+}
+
+/* ---- minimal view ---------------------------------------------------------------- */
+
+.pqv.pqv-minimal > .pqv-header,
+.pqv.pqv-minimal > .pqv-toolbar,
+.pqv.pqv-minimal > .pqv-querybar,
+.pqv.pqv-minimal > .pqv-full,
+.pqv.pqv-minimal > .pqv-counts,
+.pqv.pqv-minimal .pqv-picker {
+  display: none !important;
+}
+
+.pqv.pqv-standalone.pqv-minimal {
+  padding-top: var(--pqv-top, 0px);
+}
+
+/* the corner of the table: minimal view on and off */
+.pqv-hrownum .pqv-hfilter {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.pqv-corner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--pqv-muted);
+  cursor: pointer;
+}
+
+.pqv-corner:hover {
+  border-color: var(--pqv-line-strong);
+  background: var(--pqv-hover);
+  color: var(--pqv-fg);
+}
+
+.pqv-corner[aria-pressed="true"] {
+  color: var(--pqv-accent);
+}
+
+.pqv-corner:focus-visible {
+  outline: 2px solid var(--pqv-accent);
+  outline-offset: -1px;
+}
+
+/* ---- command palette ----------------------------------------------------------- */
+
+.pqv-palette {
+  position: absolute;
+  z-index: 20;
+  top: 12%;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100% - 16px));
+  max-height: min(440px, 76%);
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid var(--pqv-line-strong);
+  border-radius: 10px;
+  background: var(--pqv-bg);
+  box-shadow: var(--pqv-shadow);
+}
+
+.pqv-palette-input {
+  flex: none;
+  height: 40px;
+  margin: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.pqv-palette-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 6px 6px;
+}
+
+.pqv-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.pqv-palette-item[aria-selected="true"] {
+  background: var(--pqv-hover);
+  box-shadow: inset 2px 0 0 var(--pqv-accent);
+}
+
+.pqv-palette-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pqv-palette-group {
+  flex: none;
+  color: var(--pqv-muted);
+  font-size: 11px;
+}
+
+.pqv-palette-hint,
+.pqv-keys kbd {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--pqv-line-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--pqv-head);
+  color: var(--pqv-muted);
+  font: 11px/1.4 var(--pqv-mono-font);
+}
+
+.pqv-palette-empty {
+  padding: 4px 16px 14px;
+  color: var(--pqv-muted);
+}
+
+/* ---- shortcut sheet and go to row ---------------------------------------------- */
+
+.pqv-pop.pqv-keys {
+  width: 380px;
+  max-width: min(380px, calc(100% - 8px));
+}
+
+.pqv-keys:focus {
+  outline: none;
+}
+
+.pqv-keys-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 6px;
+}
+
+.pqv-keys-head {
+  margin: 8px 0 4px;
+  color: var(--pqv-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pqv-keys-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.pqv-keys-table td {
+  padding: 3px 0;
+  vertical-align: top;
+}
+
+.pqv-keys-table td:first-child {
+  width: 1%;
+  padding-right: 12px;
+  white-space: nowrap;
+}
+
+.pqv-goto {
+  width: 260px;
+}
+
+.pqv-goto-row {
+  display: flex;
+  gap: 6px;
+  padding: 0 12px 6px;
+}
+
+.pqv-goto-row .pqv-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pqv-goto .pqv-opt-note {
+  padding: 0 12px;
+}
+
+.pqv-goto-msg {
+  padding: 4px 12px 10px;
+  color: var(--pqv-bad);
+  font-size: 12px;
+}
+
+.pqv-goto-msg:empty {
+  display: none;
+}
+
+/* ---- the shell: one viewer per open dataset ------------------------------------ */
+
+.pqv-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+}
+
+.pqv-shell > .pqv {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pqv-shell > [hidden] {
+  display: none !important;
+}
+
+/* tabs, once more than one dataset is open */
+.pqv-tabs {
+  flex: none;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 8px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--pqv-line);
+  background: var(--pqv-head);
+  scrollbar-width: thin;
+}
+
+.pqv.pqv-standalone .pqv-tabs {
+  padding-top: calc(4px + var(--pqv-top, 0px));
+}
+
+.pqv.pqv-standalone .pqv-tabs:not([hidden]) + .pqv-header {
+  padding-top: 6px;
+}
+
+.pqv-tabwrap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  max-width: 260px;
+  margin-bottom: -1px;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  color: var(--pqv-muted);
+}
+
+.pqv-tabwrap:hover {
+  background: var(--pqv-hover);
+}
+
+.pqv-tabwrap-on {
+  border-color: var(--pqv-line);
+  background: var(--pqv-bg);
+  color: var(--pqv-fg);
+}
+
+.pqv-tab {
+  min-width: 0;
+  height: 28px;
+  overflow: hidden;
+  padding: 0 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pqv-tabwrap-on .pqv-tab {
+  font-weight: 600;
+}
+
+.pqv-tabclose,
+.pqv-tabopen {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--pqv-muted);
+  font: 14px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.pqv-tabopen {
+  align-self: center;
+  margin: 0 0 1px 4px;
+  font-size: 16px;
+}
+
+.pqv-tabclose:hover,
+.pqv-tabopen:hover {
+  background: var(--pqv-line);
+  color: var(--pqv-fg);
+}
+
+.pqv-tab:focus-visible,
+.pqv-tabclose:focus-visible,
+.pqv-tabopen:focus-visible {
+  outline: 2px solid var(--pqv-accent);
+  outline-offset: -2px;
+}
+
+/* messages at the foot of the viewer: reading a file, or why it failed */
+.pqv-toast {
+  position: absolute;
+  z-index: 30;
+  bottom: 14px;
+  left: 50%;
+  max-width: min(560px, calc(100% - 24px));
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--pqv-line-strong);
+  border-radius: 8px;
+  background: var(--pqv-bg);
+  box-shadow: var(--pqv-shadow);
+  color: var(--pqv-fg);
+  font-size: 12.5px;
+}
+
+.pqv-toast.pqv-toast-bad {
+  border-color: var(--pqv-bad);
+  color: var(--pqv-bad);
+}
+
+/* dragging a file over the viewer */
+.pqv-drop {
+  position: absolute;
+  z-index: 40;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--pqv-bg) 72%, transparent);
+  pointer-events: none;
+}
+
+.pqv-drop-box {
+  padding: 28px 40px;
+  border: 2px dashed var(--pqv-accent);
+  border-radius: 14px;
+  background: var(--pqv-bg);
+  color: var(--pqv-accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* the blank page: no data from R, open a file */
+.pqv.pqv-blank {
+  align-items: center;
+  justify-content: center;
+}
+
+.pqv-blank-box {
+  max-width: 420px;
+  margin: 24px;
+  padding: 36px 32px;
+  border: 2px dashed var(--pqv-line-strong);
+  border-radius: 16px;
+  text-align: center;
+}
+
+.pqv-blank-title {
+  margin-bottom: 8px;
+  font-size: 22px;
+  font-weight: 650;
+}
+
+.pqv-blank-text {
+  margin: 0 0 14px;
+  color: var(--pqv-muted);
+}
+
+.pqv-btn.pqv-blank-open {
+  height: 34px;
+  padding: 0 18px;
+  border-color: var(--pqv-accent);
+  background: var(--pqv-accent);
+  color: var(--pqv-accent-fg);
+  font-weight: 600;
+}
+
+.pqv-btn.pqv-blank-open:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pqv-accent) 88%, var(--pqv-fg));
+}
+
+.pqv-blank-note {
+  margin: 14px 0 0;
+  color: var(--pqv-muted);
+  font-size: 12px;
+}
+
+/* ---- password lock ------------------------------------------------------------- */
+
+.pqv-lock {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+}
+
+.pqv-lock-box {
+  width: min(360px, calc(100% - 32px));
+  padding: 28px 26px 22px;
+  border: 1px solid var(--pqv-line-strong);
+  border-radius: 14px;
+  background: var(--pqv-bg);
+  box-shadow: var(--pqv-shadow);
+  text-align: center;
+}
+
+.pqv-lock-icon {
+  color: var(--pqv-accent);
+}
+
+.pqv-lock-title {
+  margin: 6px 0 4px;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.pqv-lock-text {
+  margin: 0 0 14px;
+  color: var(--pqv-muted);
+  font-size: 12.5px;
+}
+
+.pqv-lock-row {
+  display: flex;
+  gap: 6px;
+}
+
+.pqv-lock-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+}
+
+.pqv-btn.pqv-lock-btn {
+  height: 32px;
+  border-color: var(--pqv-accent);
+  background: var(--pqv-accent);
+  color: var(--pqv-accent-fg);
+  font-weight: 600;
+}
+
+.pqv-btn.pqv-lock-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pqv-accent) 88%, var(--pqv-fg));
+}
+
+.pqv-lock-msg {
+  min-height: 18px;
+  margin-top: 8px;
+  color: var(--pqv-bad);
+  font-size: 12px;
 }

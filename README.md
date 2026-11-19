@@ -14,6 +14,9 @@ shared drive, and needs no R session, server or internet connection.
 viewer of 10,000 synthetic rows, about 1 MB. The same file is
 [`examples/sample.pqv.html`](examples/sample.pqv.html); download it (use
 **Download raw file** on that page) and double-click it to open it offline.
+**[Open your own file](https://jossammil.github.io/pqview/viewer.html)**:
+a blank viewer for CSV, TSV, Excel and parquet files, read in your browser
+and never uploaded.
 
 ## Install
 
@@ -44,6 +47,15 @@ save_pqview(my_data, "my_data", title = "My data",
 
 # The same file in a zip archive, my_data.pqv.zip, to email or upload
 save_pqview(my_data, "my_data", title = "My data", zip = TRUE)
+
+# A password-protected file (TRUE asks for the password, so it is not in the script)
+save_pqview(my_data, "my_data", title = "My data", password = TRUE)
+
+# A blank viewer that opens the reader's own CSV, TSV, Excel and parquet files
+save_pqview(NULL, "viewer.pqv.html")
+
+# Start in the minimal view: just the table
+pqview(mtcars, minimal = TRUE)
 
 # Start with a query, a proportional font (monospace is the default) and a dark theme
 pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
@@ -219,9 +231,48 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   sans or serif), text size and row spacing. Each reader's choices are
   remembered in their browser; `theme =` and `font =` set the starting look
   from R.
+- **Minimal view.** The button in the table's top-left corner (or `M`)
+  folds away the top band, toolbar, WHERE bar, Counts and the column list,
+  leaving the table and its column filters: a full spreadsheet view. The
+  same button brings it all back; `minimal = TRUE` starts in it.
+- **Opening files.** The open button beside the palette button, the `O`
+  key, or dropping files on the viewer opens CSV, TSV, Excel (.xlsx, first
+  sheet) and parquet files as tabs beside the data from R. Files are read in
+  the browser and never uploaded. CSV column types are guessed (numbers,
+  TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty cells are
+  missing; codes with leading zeros stay text); Excel types come from the
+  cell formats; parquet may be compressed with snappy, gzip or zstd.
+  `save_pqview(NULL, ...)` writes a blank viewer for this.
+- **Passwords.** `password =` encrypts the data in R (AES-256; the key comes
+  from the password through PBKDF2-SHA256 with 300,000 iterations, a few
+  seconds), and the viewer asks for the password before showing anything.
+  Without it the file is unreadable, even in its HTML source: column names,
+  factor levels, notes, the query and views are encrypted with the data;
+  only the title stays readable. **A lost password cannot be recovered.**
+  Once unlocked, the viewer works as usual, exports included; marks and saved
+  views of a protected file last only until the page is closed.
 - When the viewer fills a page of its own, `top_offset` adds that many
   pixels above it (default 0), for example to clear a fixed toolbar in a
   browser's full-screen mode.
+
+### Keyboard
+
+Click a cell, or focus the table and press an arrow key, for a cell cursor.
+
+| Keys | |
+|---|---|
+| Arrows, Tab, Page Up/Down | Move the cell cursor |
+| Ctrl/⌘ + arrows, Home, End | Jump to the edges |
+| Shift + arrows, Shift+click, drag | Select a block of cells; its count, sum and mean show beside the row count |
+| Ctrl/⌘ C, Ctrl/⌘ Shift C | Copy the block (with the column names) |
+| Ctrl/⌘ A | Select every shown cell |
+| Enter | Row panel for the cursor's row |
+| Ctrl/⌘ K | Command palette: type to run any action, go to, sort or filter any column, switch views or themes, or go to a row number |
+| `/` `W` `C` `K` `E` `V` `A` | Search, WHERE, columns, Counts, Export, Views, Appearance |
+| `M` `O` `G` `?` | Minimal view, open a file, go to a row, list every shortcut |
+| Ctrl/⌘ Z, Shift Ctrl/⌘ Z | Undo, redo |
+
+Single-letter keys work whenever the cursor is not in a text box.
 
 ### WHERE syntax
 
@@ -309,8 +360,8 @@ npm run build    # rebuild the bundle
 
 ```r
 devtools::test()                      # R tests
-source("examples/make-demo.R")        # writes examples/demo.html (100k x 30)
-source("examples/make-sample.R")      # writes examples/sample.pqv.html (10k x 30, kept in git)
+source("examples/make-demo.R")        # writes examples/demo.html (100k x 30) and demo-locked.html
+source("examples/make-sample.R")      # writes examples/sample.pqv.html (10k x 30) and viewer.pqv.html (blank), kept in git
 ```
 
 End-to-end tests drive the demo page in a real browser and compare every

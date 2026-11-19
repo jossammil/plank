@@ -10,15 +10,19 @@
 #' [pqviewOutput()], or written to one portable file with [save_pqview()].
 #'
 #' @param data A data frame (or something [as.data.frame()] understands), or
-#'   the path to a `.parquet` file.
+#'   the path to a `.parquet` file. `NULL` makes a blank viewer that opens
+#'   CSV, TSV, Excel and parquet files chosen or dropped by the reader (see
+#'   **Opening files** below); only `title`, `theme`, `font`, `minimal` and
+#'   `top_offset` apply to it.
 #' @param columns Names of the columns shown at first. `NULL` shows the first
 #'   ten; `character(0)` starts with none selected.
 #' @param title Optional title shown in the band above the toolbar. It is
 #'   also used as the file name for CSV exports.
 #' @param notes Optional small text shown after the title, for notes such as
 #'   the data source or date. Notes too long for the line are cut short, with
-#'   a **more** button that shows them in full. A character vector is shown
-#'   one element per line when the notes are shown in full.
+#'   a **more** button that shows them in full. The elements of a character
+#'   vector are joined with " · " on the line, and shown one per line when the
+#'   notes are shown in full.
 #' @param digits Significant digits used to display non-integer numbers.
 #'   Exports always keep full precision.
 #' @param where Optional initial WHERE condition for the query bar, such as
@@ -50,6 +54,12 @@
 #' @param font Starting font for the table: `"mono"` (the default), `"sans"`
 #'   or `"serif"`. Readers can switch in the Appearance window, and their
 #'   choice is remembered in their browser.
+#' @param password Encrypt the data with this password (a string), or
+#'   `TRUE` to be asked for it, so it does not sit in your script. See
+#'   **Passwords** below. `NULL` (the default) leaves the data unencrypted.
+#' @param minimal Start in the minimal view, with only the table showing
+#'   (its column filters included)? Readers switch it with the corner button
+#'   above the row numbers or the `M` key, and their choice is remembered.
 #' @param top_offset Extra space in pixels above the top band when the viewer
 #'   fills a page of its own (a saved file or a browser tab), for example
 #'   `50` where browser chrome such as Safari's full-screen toolbar would
@@ -133,6 +143,43 @@
 #'   or Terminal), an accent colour, the table font (mono, sans or serif),
 #'   text size and row spacing. The choices are remembered in the reader's
 #'   browser.
+#' * The corner button above the row numbers (or `M`) switches the minimal
+#'   view, which folds away everything but the table.
+#'
+#' @section Keyboard:
+#' Click a cell, or focus the table and press an arrow key, to get a cell
+#' cursor. Arrows, Home/End, Page Up/Down and Ctrl/Cmd+arrows move it;
+#' Shift+arrows, Shift+click or dragging select a block of cells, whose count,
+#' sum and mean appear beside the row count; Ctrl/Cmd+C copies the block
+#' (Ctrl/Cmd+Shift+C with the column names) and Enter opens the row panel.
+#' Single keys jump to the tools when the cursor is not in a text box: `/`
+#' search, `W` WHERE, `C` columns, `K` Counts, `E` Export, `V` Views, `A`
+#' Appearance, `M` minimal view, `O` open a file, `G` go to a row and `?`
+#' lists them all. Ctrl/Cmd+K opens a command palette to run any action, go
+#' to or sort by any column, or switch views and themes by typing.
+#'
+#' @section Passwords:
+#' With `password`, the data is encrypted in R (AES-256, with a key derived
+#' from the password by PBKDF2-SHA256 with 300,000 iterations, which takes a
+#' few seconds) and the viewer asks for the password before showing anything.
+#' Without it the file is unreadable, even to someone who opens its HTML
+#' source: the column names, factor levels, notes, query and views are
+#' encrypted with the data. Only the title stays readable, as the file's
+#' label. Keep the password safe: **a lost password cannot be recovered**.
+#' Once unlocked, readers can use the viewer as usual, exports included;
+#' marks and saved views of a protected file are kept only until the page is
+#' closed, so nothing about the data is left in the browser. Unlocking needs
+#' a secure page: a saved file, the RStudio viewer or an https address.
+#'
+#' @section Opening files:
+#' **O**, the open button beside the palette button, or dropping files on
+#' the viewer opens CSV, TSV, Excel (.xlsx, first sheet) and parquet files as
+#' new tabs beside the data from R. The files are read in the reader's
+#' browser and never uploaded. Column types are guessed from CSV text
+#' (numbers, TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty
+#' cells are missing) and taken from the cell formats in Excel. Parquet files
+#' compressed with snappy, gzip or zstd can be opened. `pqview(NULL)` (or
+#' `save_pqview(NULL, "viewer.pqv.html")`) makes a blank viewer for this.
 #'
 #' @examples
 #' if (interactive()) {
@@ -157,6 +204,8 @@ pqview <- function(data,
                    views = NULL,
                    theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
                    font = c("mono", "sans", "serif"),
+                   minimal = FALSE,
+                   password = NULL,
                    top_offset = 0,
                    rownames = NULL,
                    compression = c("gzip", "snappy"),
@@ -173,8 +222,17 @@ pqview <- function(data,
     is.null(notes) || is.character(notes),
     is.null(where) || (is.character(where) && length(where) == 1L && !is.na(where)),
     is.numeric(digits), length(digits) == 1L, digits >= 1, digits <= 17,
-    is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0
+    is.numeric(top_offset), length(top_offset) == 1L, !is.na(top_offset), top_offset >= 0,
+    is.logical(minimal), length(minimal) == 1L, !is.na(minimal)
   )
+
+  if (is.null(data)) {
+    if (!is.null(password)) stop("`password` needs data to protect.", call. = FALSE)
+    # A blank viewer: the reader opens files in it.
+    x <- list(theme = theme, font = font, top_offset = top_offset, digits = digits, minimal = minimal)
+    if (!is.null(title)) x$title <- title
+    return(pqview_widget(x, width, height, elementId))
+  }
 
   check_names_arg(sort, "sort")
   check_names_arg(pin, "pin")
@@ -206,6 +264,7 @@ pqview <- function(data,
     theme = theme,
     font = font,
     top_offset = top_offset,
+    minimal = minimal,
     nrow = enc$nrow,
     ncol = enc$ncol
   )
@@ -219,7 +278,11 @@ pqview <- function(data,
   if (length(formats)) x$formats <- formats
   if (!is.null(counts)) x$counts <- as.list(counts)
   if (length(views)) x$views <- views
+  if (!is.null(password)) x <- encrypt_payload(x, enc$bytes, read_password(password))
+  pqview_widget(x, width, height, elementId)
+}
 
+pqview_widget <- function(x, width, height, elementId) {
   htmlwidgets::createWidget(
     name = "pqview",
     x = x,

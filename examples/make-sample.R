@@ -25,3 +25,7 @@ out <- save_pqview(sample_data, "examples/sample.pqv.html", title = "pqview samp
     "Region by enrolment" = pqview_view(counts = c("region", "enrolled"))
   ))
 cat(sprintf("%s: %d x %d, %.2f MB\n", out, nrow(sample_data), ncol(sample_data), file.size(out) / 1e6))
+
+# A blank viewer: open CSV, TSV, Excel or parquet files in it, no R needed.
+viewer <- save_pqview(NULL, "examples/viewer.pqv.html", title = "pqview")
+cat(sprintf("%s: %.2f MB\n", viewer, file.size(viewer) / 1e6))

@@ -7,7 +7,9 @@
 save_pqview(x, file, ..., page_title = NULL, open = FALSE, zip = FALSE)
 }
 \arguments{
-\item{x}{A \code{\link[=pqview]{pqview()}} widget, or anything \code{\link[=pqview]{pqview()}} accepts as \code{data}.}
+\item{x}{A \code{\link[=pqview]{pqview()}} widget, or anything \code{\link[=pqview]{pqview()}} accepts as \code{data}.
+\code{NULL} writes a blank viewer that opens the reader's own CSV, TSV, Excel
+and parquet files.}
 
 \item{file}{Path of the file to write. See \strong{File names} below.}
 

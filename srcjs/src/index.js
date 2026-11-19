@@ -18,7 +18,12 @@ import { CountsPanel } from './counts.js'
 import { RowDetail } from './detail.js'
 import {
   readAppearance, defaultAppearance, applyAppearance, appearancePanel, effectiveFont, rowHeight, APPEARANCE_KEYS,
+  THEMES, FONTS, SIZES, DENSITIES,
 } from './appearance.js'
+import { shortcutFor, isTyping, helpSheet, keyHint } from './keys.js'
+import { openPalette } from './palette.js'
+import { readFile, OPEN_ACCEPT } from './import.js'
+import { unlockPayload, WrongPassword, subtleCrypto } from './crypto.js'
 import {
   makeView, normalizeView, viewSignature, parseSaved, serializeSaved, describeView, viewToR, specFromView,
 } from './views.js'
@@ -90,6 +95,8 @@ const svg = (body) => `<svg viewBox="0 0 16 16" width="15" height="15" aria-hidd
 const PALETTE_ICON = svg('<path d="M8 1.75a6.25 6.25 0 0 0 0 12.5c.85 0 1.35-.55 1.35-1.25 0-.4-.17-.7-.38-.98-.22-.29-.4-.57-.4-.95 0-.75.6-1.3 1.35-1.3h1.55a3.2 3.2 0 0 0 3.18-3.2C14.65 4.3 11.7 1.75 8 1.75z"/>' +
   '<circle cx="4.9" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="6.9" cy="4.7" r=".95" fill="currentColor" stroke="none"/>' +
   '<circle cx="10.2" cy="4.9" r=".95" fill="currentColor" stroke="none"/>')
+const OPEN_ICON = svg('<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z"/><path d="M8 7v4M6 9h4"/>')
+const LOCK_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>'
 const CHEVRON = '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
 const QUERY_EXAMPLES = [
   ['age > 30 AND region IN (\'West\', \'South\')', 'Compare numbers, match a list'],
@@ -136,14 +143,21 @@ function clearPref(key) {
 }
 
 /**
- * @param {HTMLElement} el container element
+ * One viewer: a dataset with its toolbar, column list and table.
+ * @param {HTMLElement} el the viewer's root element
  * @param {object} x payload from R: { data, meta, columns, digits, title, theme, font, where, top_offset }
+ * @param {object} [ctx] from the shell: { standalone, widgetId(), source, openFile }. `source` is a file
+ *   opened in the browser: { ds, size, name, fp }.
  */
-export function mount(el, x) {
+function mountInstance(el, x, ctx = {}) {
   const t0 = performance.now()
   if (el.pqview && el.pqview.destroy) el.pqview.destroy()
   el.textContent = ''
   el.classList.add('pqv')
+  // Tabs, when the shell has more than one dataset open.
+  const tabStrip = h('div', { class: 'pqv-tabs', role: 'tablist', 'aria-label': 'Open data', hidden: true })
+  el.append(tabStrip)
+  let dead = false
 
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
   const systemDark = () => !!(media && media.matches)
@@ -155,13 +169,15 @@ export function mount(el, x) {
     pickerWidth: +loadPref('pickerWidth') || 0,
     naMode: NA_MODES.some((m) => m.key === loadPref('naText')) ? loadPref('naText') : 'empty',
     naCustom: (loadPref('naCustom') || '').slice(0, NA_CUSTOM_MAX),
+    minimal: loadPref('minimal') === null ? !!x.minimal : loadPref('minimal') === '1',
   }
 
   // A widget that fills a page of its own gets a little room at the top, plus
   // top_offset pixels from R where browser chrome (for example Safari in full
   // screen) would cover the toolbar.
-  const standalone = !!el.parentElement && el.parentElement.id === 'htmlwidget_container' &&
-    !/[?&]viewer_pane=1/.test(window.location.search)
+  const standalone = ctx.standalone !== undefined ? ctx.standalone : isStandalone(el)
+  // Shiny input names start with the output's id (read when sending, as Shiny sets it late).
+  const widgetIdOf = () => (ctx.widgetId ? ctx.widgetId() : el.id)
   const topOffset = Math.max(0, Number(x.top_offset) || 0)
   if (standalone) {
     el.classList.add('pqv-standalone')
@@ -174,13 +190,16 @@ export function mount(el, x) {
     queryMask: null, queryInvert: false, queryError: null, queryCols: [], queryText: '', computed: false,
   }
   const timings = {}
-  const api = { state, timings, ready: null, destroy() {} }
+  const api = { state, timings, ready: null, tabStrip, destroy() { dead = true } }
   el.pqview = api
 
   const loading = h('div', { class: 'pqv-loading', text: 'Loading data' })
-  el.append(loading)
+  // A password-protected file asks for its password before anything else.
+  const locked = !!x.enc && !ctx.source
+  let unlocked = null
+  if (!locked) el.append(loading)
 
-  api.ready = init().catch((err) => {
+  api.ready = (locked ? askPassword() : Promise.resolve()).then(init).catch((err) => {
     el.textContent = ''
     el.append(h('div', { class: 'pqv-error', role: 'alert' },
       h('strong', { text: 'pqview could not read the data. ' }),
@@ -190,12 +209,82 @@ export function mount(el, x) {
   api.ready.catch(() => {})
   return api
 
+  function askPassword() {
+    return new Promise((resolve) => {
+      const input = h('input', {
+        class: 'pqv-input pqv-lock-input', type: 'password', autocomplete: 'off', placeholder: 'Password',
+        'aria-label': 'Password',
+      })
+      const btn = h('button', { class: 'pqv-btn pqv-lock-btn', type: 'submit', text: 'Unlock' })
+      const msg = h('div', { class: 'pqv-lock-msg', role: 'alert' })
+      const icon = h('div', { class: 'pqv-lock-icon', 'aria-hidden': 'true' })
+      icon.innerHTML = LOCK_ICON
+      const form = h('form', { class: 'pqv-lock' },
+        h('div', { class: 'pqv-lock-box' },
+          icon,
+          h('div', { class: 'pqv-lock-title', text: x.title || 'Protected data' }),
+          h('p', { class: 'pqv-lock-text', text: 'This data is encrypted. Enter the password to open it.' }),
+          h('div', { class: 'pqv-lock-row' }, input, btn),
+          msg))
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault()
+        if (!input.value) {
+          input.focus()
+          return
+        }
+        btn.disabled = true
+        input.disabled = true
+        btn.textContent = 'Unlocking…'
+        msg.textContent = ''
+        try {
+          const { fields, bytes } = await unlockPayload(x, input.value)
+          unlocked = bytes
+          x = { ...x, ...fields }
+          form.remove()
+          el.append(loading)
+          resolve()
+        } catch (err) {
+          msg.textContent = err instanceof WrongPassword ? 'Wrong password. Try again.' : String((err && err.message) || err)
+          btn.disabled = false
+          input.disabled = false
+          btn.textContent = 'Unlock'
+          input.select()
+          input.focus()
+        }
+      })
+      if (!subtleCrypto()) {
+        msg.textContent = 'This page cannot decrypt data here: open the file directly, or from an https address.'
+        btn.disabled = true
+        input.disabled = true
+      }
+      el.append(form)
+      if (standalone) input.focus()
+    })
+  }
+
   async function init() {
-    const bytes = decodeBase64(x.data)
-    const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
-      ? bytes.buffer
-      : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
-    const ds = openDataset(buffer, x.meta || {}, { digits: x.digits })
+    let ds
+    let dataBytes
+    let fpText
+    const src = ctx.source || null
+    if (src) {
+      ds = src.ds
+      dataBytes = src.size
+      fpText = src.fp
+    } else if (unlocked) {
+      const buffer = unlocked.buffer.slice(unlocked.byteOffset, unlocked.byteOffset + unlocked.byteLength)
+      ds = openDataset(buffer, x.meta || {}, { digits: x.digits })
+      dataBytes = unlocked.byteLength
+      fpText = bytesText(unlocked)
+    } else {
+      const bytes = decodeBase64(x.data)
+      const buffer = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+        ? bytes.buffer
+        : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+      ds = openDataset(buffer, x.meta || {}, { digits: x.digits })
+      dataBytes = bytes.byteLength
+      fpText = String(x.data || '')
+    }
     api.ds = ds
     timings.opened = performance.now() - t0
 
@@ -213,6 +302,8 @@ export function mount(el, x) {
     const searchRegexBtn = toggle('.*', 'Search with a regular expression', state.searchRegex)
     const searchNotBtn = toggle('NOT', 'Show rows that do NOT match the search', false)
     const status = h('div', { class: 'pqv-status', role: 'status' })
+    // Count, sum and mean of the selected cells, beside the row count.
+    const selInfo = h('div', { class: 'pqv-selinfo', hidden: true })
     const clearBtn = h('button', { class: 'pqv-btn pqv-clear', type: 'button', text: 'Clear filters', hidden: true })
     const undoBtn = h('button', { class: 'pqv-btn pqv-icon', type: 'button', disabled: true })
     undoBtn.innerHTML = svg('<path d="M6 3 2.5 6.5 6 10"/><path d="M2.5 6.5h7a4 4 0 0 1 0 8H7"/>')
@@ -239,19 +330,26 @@ export function mount(el, x) {
     // Display preferences sit quietly in the title band, apart from the
     // controls that change the data shown.
     const lookBtn = h('button', {
-      class: 'pqv-pref pqv-pref-icon', type: 'button', title: 'Appearance', 'aria-label': 'Appearance',
+      class: 'pqv-pref pqv-pref-icon pqv-pref-look', type: 'button', title: 'Appearance', 'aria-label': 'Appearance',
       'aria-haspopup': 'dialog', 'aria-expanded': 'false',
     })
     lookBtn.innerHTML = PALETTE_ICON
+    const openBtn = ctx.openFile ? h('button', {
+      class: 'pqv-pref pqv-pref-icon pqv-pref-open', type: 'button', title: 'Open a CSV, TSV, Excel or parquet file as a new tab (O)',
+      'aria-label': 'Open a file', onclick: () => ctx.openFile(),
+    }) : null
+    if (openBtn) openBtn.innerHTML = OPEN_ICON
 
     // ---- title band: title, notes, row count and data sizes ----------------
-    const dataBytes = bytes.byteLength
-    const sizeData = h('div', { class: 'pqv-size' })
-    const sizeExport = h('div', { class: 'pqv-size' })
+    const sizeData = h('div', { class: 'pqv-size pqv-size-data' })
+    const sizeExport = h('div', { class: 'pqv-size pqv-size-export' })
     const pageBytes = Math.round((String(x.data || '').length + 150000) / 1024) * 1024
     sizeData.append(h('span', { class: 'pqv-size-k', text: 'Data' }), h('span', { class: 'pqv-size-v', text: formatBytes(dataBytes) }))
-    sizeData.title = `Embedded parquet data: ${dataBytes.toLocaleString()} bytes ` +
-      `(${ds.n.toLocaleString()} rows × ${ds.fields.length} columns). This page is about ${formatBytes(pageBytes)}.`
+    sizeData.title = src
+      ? `File '${src.name}'${src.sheet ? `, sheet '${src.sheet}'` : ''}: ${dataBytes.toLocaleString()} bytes ` +
+        `(${ds.n.toLocaleString()} rows × ${ds.fields.length} columns), read in this browser.`
+      : `Embedded parquet data: ${dataBytes.toLocaleString()} bytes ` +
+        `(${ds.n.toLocaleString()} rows × ${ds.fields.length} columns). This page is about ${formatBytes(pageBytes)}.`
     const notes = x.notes == null ? '' : [].concat(x.notes).join('\n')
     const heading = h('div', { class: 'pqv-heading' })
     if (x.title) heading.append(h('div', { class: 'pqv-title', text: x.title, title: x.title }))
@@ -259,9 +357,10 @@ export function mount(el, x) {
     const header = h('div', { class: 'pqv-header' },
       heading,
       h('div', { class: 'pqv-headright' },
+        selInfo,
         status,
         h('div', { class: 'pqv-sizes' }, sizeData, sizeExport),
-        h('div', { class: 'pqv-prefs' }, lookBtn)))
+        h('div', { class: 'pqv-prefs' }, openBtn, lookBtn)))
     header.classList.toggle('pqv-header-empty', !x.title && !notes)
 
     // Left: what is shown and how it is chosen. Right: actions, then views.
@@ -269,9 +368,11 @@ export function mount(el, x) {
       pickerBtn,
       h('div', { class: 'pqv-switches' }, queryBtn, fullBtn),
       h('div', { class: 'pqv-searchgroup' }, searchInput, searchRegexBtn, searchNotBtn),
-      h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
-      h('div', { class: 'pqv-tsep', 'aria-hidden': 'true' }),
-      viewsBtn)
+      // One group, so it wraps as a unit and stays at the right.
+      h('div', { class: 'pqv-tright' },
+        h('div', { class: 'pqv-undo' }, undoBtn, redoBtn), clearBtn, countsBtn, markBtn, exportBtn,
+        h('div', { class: 'pqv-tsep', 'aria-hidden': 'true' }),
+        viewsBtn))
 
     // ---- query bar ------------------------------------------------------
     const queryInput = h('input', {
@@ -361,7 +462,7 @@ export function mount(el, x) {
     const detailSoon = debounce(() => detail && detail.refresh(), 120)
     // In Shiny, the reader's rows and settings are sent back as inputs:
     // <id>_rows (row numbers, in display order), <id>_state and <id>_row.
-    const shiny = () => (el.id && window.Shiny && typeof window.Shiny.setInputValue === 'function' ? window.Shiny : null)
+    const shiny = () => (widgetIdOf() && window.Shiny && typeof window.Shiny.setInputValue === 'function' ? window.Shiny : null)
     let shinyRows = null
     const sendShiny = () => {
       const S = shiny()
@@ -370,9 +471,9 @@ export function mount(el, x) {
         shinyRows = state.view
         const rows = new Array(state.view.length)
         for (let k = 0; k < rows.length; k++) rows[k] = state.view[k] + 1
-        S.setInputValue(el.id + '_rows', rows)
+        S.setInputValue(widgetIdOf() + '_rows', rows)
       }
-      S.setInputValue(el.id + '_state', {
+      S.setInputValue(widgetIdOf() + '_state', {
         columns: state.cols.map((c) => c.name),
         sort: state.sort.map((s) => (s.dir === 'desc' ? '-' : '') + s.name),
         pinned: state.pinned.slice(),
@@ -384,7 +485,7 @@ export function mount(el, x) {
     const shinySoon = debounce(sendShiny, 250)
     const sendShinyRow = (i) => {
       const S = shiny()
-      if (S) S.setInputValue(el.id + '_row', i < 0 ? null : i + 1)
+      if (S) S.setInputValue(widgetIdOf() + '_row', i < 0 ? null : i + 1)
     }
     let updateViewLabel = () => {}
     const viewLabelSoon = debounce(() => updateViewLabel(), 300)
@@ -506,8 +607,24 @@ export function mount(el, x) {
         viewLabelSoon()
         recordSoon()
       },
+      onSelect: (r) => selectionSoon(r),
+      onCopy: (r, withHeader) => copyRange(r, withHeader),
+      onOpenRow: (i) => openDetail(i),
+      onCorner: () => setMinimal(!prefs.minimal),
     })
     api.grid = grid
+
+    // ---- minimal view: just the table ----------------------------------------
+    const setMinimal = (on) => {
+      prefs.minimal = !!on
+      el.classList.toggle('pqv-minimal', prefs.minimal)
+      grid.setCornerState(prefs.minimal)
+      savePref('minimal', prefs.minimal ? '1' : '0')
+      grid.schedule()
+    }
+    el.classList.toggle('pqv-minimal', prefs.minimal)
+    grid.setCornerState(prefs.minimal)
+    api.setMinimal = setMinimal
 
     // ---- appearance -------------------------------------------------------
     const paintPage = () => {
@@ -542,6 +659,11 @@ export function mount(el, x) {
       showLook(defaultAppearance(x))
     }
     api.appearance = { get: () => ({ ...look }), set: setLook, reset: resetLook }
+    api.refreshLook = () => {
+      const next = readAppearance(loadPref, x)
+      if (APPEARANCE_KEYS.some((k) => next[k] !== look[k])) showLook(next)
+      grid.schedule()
+    }
     lookBtn.addEventListener('click', () => {
       if (grid.pop && grid.pop.anchor === lookBtn) {
         grid.closePop()
@@ -558,6 +680,7 @@ export function mount(el, x) {
     paintPage()
 
     api.destroy = () => {
+      dead = true
       grid.destroy()
       document.removeEventListener('keydown', onUndoKey)
       if (media && media.removeEventListener) media.removeEventListener('change', onScheme)
@@ -568,7 +691,7 @@ export function mount(el, x) {
     const statsQueue = []
     let draining = false
     const drainStats = () => {
-      const col = statsQueue.shift()
+      const col = dead ? null : statsQueue.shift()
       if (!col) {
         draining = false
         return
@@ -986,13 +1109,18 @@ export function mount(el, x) {
     api.togglePin = togglePin
 
     // ---- marker columns -------------------------------------------------
-    const dataPrint = fingerprint(ds.n, ds.fields.map((f) => f.name), String(x.data || ''))
+    const dataPrint = fingerprint(ds.n, ds.fields.map((f) => f.name), fpText)
+    // A protected file's marks and views stay in memory, so nothing about its
+    // data is left in the browser.
+    const dataStore = x.enc ? memoryStorage() : null
+    const store = () => dataStore || window.localStorage
+    const kept = x.enc ? 'kept until the page is closed' : 'saved in this browser'
     const marksKey = 'pqview.marks.' + dataPrint
     const marksStore = { error: null }
     const saveMarks = () => {
       try {
-        if (!markers.size) window.localStorage.removeItem(marksKey)
-        else window.localStorage.setItem(marksKey, JSON.stringify(serializeMarkers(Array.from(markers.values()))))
+        if (!markers.size) store().removeItem(marksKey)
+        else store().setItem(marksKey, JSON.stringify(serializeMarkers(Array.from(markers.values()))))
         marksStore.error = null
       } catch (err) {
         marksStore.error = 'Marks could not be saved in this browser (storage is full or blocked). Export the data to keep them.'
@@ -1008,7 +1136,7 @@ export function mount(el, x) {
     const restoreMarks = () => {
       let saved = null
       try {
-        const text = window.localStorage.getItem(marksKey)
+        const text = store().getItem(marksKey)
         saved = text ? JSON.parse(text) : null
       } catch {
         saved = null
@@ -1234,7 +1362,7 @@ export function mount(el, x) {
         h('p', {
           class: 'pqv-opt-note',
           text: 'Marking replaces any value already on those rows. Click a cell in a marker column to set one row. ' +
-            'Marks are saved in this browser; Export includes them.',
+            `Marks are ${kept}; Export includes them.`,
         }))
       grid.openPop(markBtn, pop, value)
       if (marksStore.error && !message) msg.classList.add('pqv-bad-text')
@@ -1443,9 +1571,10 @@ export function mount(el, x) {
       }
       const pop = h('div', { class: 'pqv-pop pqv-exportmenu', role: 'dialog', 'aria-label': 'Export' },
         h('div', { class: 'pqv-pop-title', text: `Export ${rows.toLocaleString()} rows × ${ncol} columns` }),
+        // The result goes right under the title, so it stays in view in a short widget.
+        msg,
         list,
-        missingControl(),
-        msg)
+        missingControl())
       grid.openPop(exportBtn, pop, list.querySelector('button'))
     })
 
@@ -1652,14 +1781,14 @@ export function mount(el, x) {
     const viewStore = { error: null }
     let savedViews = []
     try {
-      savedViews = parseSaved(window.localStorage.getItem(viewsKey) || '[]')
+      savedViews = parseSaved(store().getItem(viewsKey) || '[]')
     } catch {
       savedViews = []
     }
     const saveViews = () => {
       try {
-        if (savedViews.length) window.localStorage.setItem(viewsKey, serializeSaved(savedViews))
-        else window.localStorage.removeItem(viewsKey)
+        if (savedViews.length) store().setItem(viewsKey, serializeSaved(savedViews))
+        else store().removeItem(viewsKey)
         viewStore.error = null
         return true
       } catch {
@@ -1849,7 +1978,7 @@ export function mount(el, x) {
         list.append(h('div', { class: 'pqv-views-group', text: 'In this report' }))
         for (const v of authorViews) list.append(item(v, false))
       }
-      list.append(h('div', { class: 'pqv-views-group', text: 'Saved in this browser' }))
+      list.append(h('div', { class: 'pqv-views-group', text: x.enc ? 'Saved until the page is closed' : 'Saved in this browser' }))
       for (const v of savedViews) list.append(item(v, true))
       if (!savedViews.length) {
         list.append(h('div', {
@@ -1883,6 +2012,297 @@ export function mount(el, x) {
       else openViewsPanel()
     })
 
+    // ---- keyboard: selection readout, copy, shortcuts, command palette ------
+    let flashTimer = 0
+    const fmtStat = (v) => (Math.abs(v) >= 1e15 || (v !== 0 && Math.abs(v) < 1e-4)
+      ? formatNumber(v, 6)
+      : v.toLocaleString(undefined, { maximumFractionDigits: Math.abs(v) < 1 ? 4 : 2 }))
+    const showSelInfo = (r) => {
+      if (flashTimer) return
+      if (!r || r.cells < 2) {
+        selInfo.hidden = true
+        return
+      }
+      let values = 0
+      let nums = 0
+      let sum = 0
+      let min = Infinity
+      let max = -Infinity
+      const view = state.view
+      for (const col of r.cols) {
+        const isNum = col.type === 'number'
+        for (let p = r.r0; p <= r.r1; p++) {
+          const i = view[p]
+          if (col.isNull[i]) continue
+          values++
+          if (!isNum) continue
+          const v = col.num[i]
+          if (!Number.isFinite(v)) continue
+          nums++
+          sum += v
+          if (v < min) min = v
+          if (v > max) max = v
+        }
+      }
+      const parts = [`${r.cells.toLocaleString()} cells`]
+      if (nums) parts.push(`sum ${fmtStat(sum)}`, `mean ${fmtStat(sum / nums)}`)
+      selInfo.textContent = parts.join(' · ')
+      selInfo.title = `${(r.r1 - r.r0 + 1).toLocaleString()} rows × ${r.cols.length} columns selected: ` +
+        `${values.toLocaleString()} values, ${(r.cells - values).toLocaleString()} missing` +
+        (nums ? `. Numbers: ${nums.toLocaleString()}, sum ${fmtStat(sum)}, mean ${fmtStat(sum / nums)}, ` +
+          `min ${fmtStat(min)}, max ${fmtStat(max)}` : '') + '. Ctrl/⌘+C copies them.'
+      selInfo.hidden = false
+    }
+    const selectionSoon = debounce(showSelInfo, 60)
+    // A short message in the readout's place (and for screen readers).
+    const flash = (text, bad = false) => {
+      clearTimeout(flashTimer)
+      selInfo.textContent = text
+      selInfo.title = ''
+      selInfo.classList.toggle('pqv-bad-text', bad)
+      selInfo.hidden = false
+      grid.live.textContent = text
+      flashTimer = setTimeout(() => {
+        flashTimer = 0
+        selInfo.classList.remove('pqv-bad-text')
+        showSelInfo(grid.range())
+      }, 2000)
+    }
+    api.flash = flash
+    const copyRange = (r, withHeader) => {
+      if (r.cells > 1e6 && !window.confirm(`Copy ${r.cells.toLocaleString()} cells? This can take a moment.`)) return
+      const text = toTSV(r.cols, state.view.subarray(r.r0, r.r1 + 1), { na: naText(), header: withHeader })
+      copyText(text).then((ok) => flash(ok
+        ? `Copied ${r.cells.toLocaleString()} cell${r.cells === 1 ? '' : 's'}${withHeader ? ' with column names' : ''}`
+        : 'Copy failed', !ok))
+    }
+    api.copySelection = (withHeader = false) => {
+      const r = grid.range()
+      if (r) copyRange(r, withHeader)
+    }
+
+    // Columns from the keyboard or the palette.
+    const showColumn = async (name) => {
+      if (state.cols.some((c) => c.name === name)) return
+      const next = picker.selected().concat(name)
+      picker.setSelected(next)
+      picker.updateCount()
+      await setSelected(next)
+    }
+    const goToColumn = async (name) => {
+      await showColumn(name)
+      const c = grid.colIndex(name)
+      if (!c) return
+      const n = state.view.length
+      if (n) grid.setCursor(grid.cursor ? Math.min(grid.cursor.pos, n - 1) : grid.firstVisible(), c)
+      else grid.revealColumn(c)
+      grid.scroller.focus({ preventScroll: true })
+    }
+    const sortColumn = async (name, dir) => {
+      await showColumn(name)
+      state.sort = [{ name, dir }]
+      grid.setSort(state.sort)
+      recompute()
+    }
+    const filterColumn = async (name) => {
+      if (prefs.minimal) setMinimal(false)
+      await showColumn(name)
+      const c = grid.colIndex(name)
+      if (c) grid.revealColumn(c)
+      const cell = Array.from(grid.head.querySelectorAll('.pqv-hcell')).find((e) => e.dataset.name === name)
+      const ctl = cell && cell.querySelector('.pqv-hfilter input, .pqv-hfilter select, .pqv-hfilter button')
+      if (ctl) ctl.focus()
+    }
+    const hideColumn = async (name) => {
+      const next = picker.selected().filter((n) => n !== name)
+      picker.setSelected(next)
+      picker.updateCount()
+      await setSelected(next)
+    }
+    const goToRow = (k) => {
+      if (!(k >= 1 && k <= ds.n)) return `Enter a row number from 1 to ${ds.n.toLocaleString()}.`
+      const pos = state.view.indexOf(k - 1)
+      if (pos < 0) return `Row ${k.toLocaleString()} is filtered out; clear the filters to see it.`
+      const c = grid.cursor ? Math.max(1, grid.colIndex(grid.cursor.name)) : 1
+      grid.setCursor(pos, c)
+      grid.scroller.focus({ preventScroll: true })
+      return null
+    }
+    api.goToRow = goToRow
+    const openGoTo = () => {
+      if (grid.pop && grid.pop.el.classList.contains('pqv-goto')) {
+        grid.closePop()
+        return
+      }
+      const input = h('input', {
+        class: 'pqv-input', type: 'text', inputmode: 'numeric', autocomplete: 'off',
+        placeholder: `1 to ${ds.n.toLocaleString()}`, 'aria-label': 'Row number',
+      })
+      const msg = h('div', { class: 'pqv-goto-msg', 'aria-live': 'polite' })
+      const go = () => {
+        const k = parseInt(input.value.replace(/[,\s]/g, ''), 10)
+        const err = goToRow(k)
+        if (err) msg.textContent = err
+        else grid.closePop()
+      }
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          go()
+        }
+      })
+      const pop = h('div', { class: 'pqv-pop pqv-goto', role: 'dialog', 'aria-label': 'Go to row' },
+        h('div', { class: 'pqv-pop-title', text: 'Go to row' }),
+        h('div', { class: 'pqv-goto-row' }, input, h('button', { class: 'pqv-btn pqv-btn-sm', type: 'button', text: 'Go', onclick: go })),
+        h('div', { class: 'pqv-opt-note', text: 'The number in the # column: the row in the original data.' }),
+        msg)
+      grid.openPop(grid.cornerBtn, pop, input)
+    }
+    const openHelp = () => {
+      if (grid.pop && grid.pop.el.classList.contains('pqv-keys')) {
+        grid.closePop()
+        return
+      }
+      const sheet = helpSheet()
+      sheet.tabIndex = -1
+      grid.openPop(grid.cornerBtn, sheet, sheet)
+    }
+
+    let palette = null
+    const runAndReport = async (fn) => {
+      try {
+        const m = await fn()
+        if (m) flash(m)
+      } catch (err) {
+        flash(String((err && err.message) || err), true)
+      }
+    }
+    const paletteItems = () => {
+      const items = []
+      const add = (label, run, hint = '', group = '') => items.push({ label, run, hint, group })
+      add('Search the visible columns', () => doShortcut('search'), '/')
+      add('WHERE query', () => doShortcut('where'), 'W')
+      add(prefs.full ? 'Hide See Query' : 'See Query: every filter as one query', () => fullBtn.click())
+      add('Find a column in the column list', () => doShortcut('columns'), 'C')
+      add(counts.open ? 'Close the Counts panel' : 'Counts panel', () => doShortcut('counts'), 'K')
+      add('Mark the filtered rows…', () => markBtn.click())
+      add('Views…', () => doShortcut('views'), 'V')
+      add('Appearance…', () => doShortcut('appearance'), 'A')
+      add(prefs.minimal ? 'Leave the minimal view' : 'Minimal view: just the table', () => doShortcut('minimal'), 'M')
+      if (ctx.openFile) add('Open a file as a new tab…', () => doShortcut('open'), 'O')
+      add('Go to row…', () => doShortcut('goto'), 'G')
+      add('Keyboard shortcuts', () => doShortcut('help'), '?')
+      if (!clearBtn.hidden) add('Clear all filters', () => clearBtn.click())
+      if (!undoBtn.disabled) add('Undo', () => undoBtn.click(), 'Ctrl/⌘ Z')
+      if (!redoBtn.disabled) add('Redo', () => redoBtn.click())
+      const r = grid.range()
+      if (r) {
+        add('Copy the selected cells', () => copyRange(r, false), 'Ctrl/⌘ C')
+        add('Copy the selected cells with column names', () => copyRange(r, true))
+      }
+      if (state.cols.length) {
+        for (const f of EXPORTS) add(`Export: ${f.label}`, () => runAndReport(() => runExport(f.key)), '', 'Export')
+      }
+      for (const v of authorViews.concat(savedViews)) add(`View: ${v.name}`, () => applyView(v), '', 'View')
+      for (const [value, label] of THEMES) add(`Theme: ${label}`, () => setLook('theme', value), '', 'Appearance')
+      for (const [value, label] of FONTS) add(`Font: ${label}`, () => setLook('font', value), '', 'Appearance')
+      for (const [value, label] of SIZES) add(`Text size: ${label}`, () => setLook('size', value), '', 'Appearance')
+      for (const [value, label] of DENSITIES) add(`Row spacing: ${label}`, () => setLook('density', value), '', 'Appearance')
+      for (const name of fieldNames()) {
+        const shown = state.cols.some((c) => c.name === name)
+        add(`Go to column ${name}`, () => goToColumn(name), '', 'Column')
+        add(`Sort by ${name}, ascending`, () => sortColumn(name, 'asc'), '', 'Column')
+        add(`Sort by ${name}, descending`, () => sortColumn(name, 'desc'), '', 'Column')
+        add(`Filter ${name}…`, () => filterColumn(name), '', 'Column')
+        if (shown) add(`Hide column ${name}`, () => hideColumn(name), '', 'Column')
+      }
+      return items
+    }
+    const openCommandPalette = () => {
+      if (palette) {
+        palette.close()
+        return
+      }
+      grid.closePop()
+      palette = openPalette(el, paletteItems, {
+        extra: (q) => {
+          const m = /^\s*(?:row\s*)?#?\s*([\d,]+)\s*$/i.exec(q)
+          if (!m) return []
+          const k = +m[1].replace(/,/g, '')
+          return [{
+            label: `Go to row ${k.toLocaleString()}`, group: 'Row',
+            run: () => {
+              const err = goToRow(k)
+              if (err) flash(err, true)
+            },
+          }]
+        },
+        onClose: () => { palette = null },
+      })
+    }
+    api.openPalette = openCommandPalette
+
+    const leaveMinimal = () => {
+      if (prefs.minimal) setMinimal(false)
+    }
+    const doShortcut = (name) => {
+      switch (name) {
+        case 'palette': openCommandPalette(); break
+        case 'search':
+          leaveMinimal()
+          searchInput.focus()
+          searchInput.select()
+          break
+        case 'where':
+          leaveMinimal()
+          showQueryBar()
+          queryInput.focus()
+          break
+        case 'columns':
+          leaveMinimal()
+          if (pickerHost.hidden) pickerBtn.click()
+          picker.search.focus()
+          picker.search.select()
+          break
+        case 'counts':
+          leaveMinimal()
+          countsBtn.click()
+          break
+        case 'export': exportBtn.click(); break
+        case 'views': viewsBtn.click(); break
+        case 'appearance': lookBtn.click(); break
+        case 'minimal': setMinimal(!prefs.minimal); break
+        case 'open': if (ctx.openFile) ctx.openFile(); break
+        case 'goto': openGoTo(); break
+        case 'help': openHelp(); break
+      }
+    }
+    api.shortcut = doShortcut
+    const onShortcutKey = (e) => {
+      if (el.hidden || e.defaultPrevented) return
+      const t = e.target
+      // Keys pressed inside the viewer, or anywhere when it fills the page.
+      if (!(el.contains(t) || (standalone && (t === document.body || t === document.documentElement)))) return
+      const name = shortcutFor(e)
+      if (!name) return
+      // Ctrl/⌘+K works from a text box too; single keys are typing there.
+      if (isTyping(t) && !(name === 'palette' && (e.ctrlKey || e.metaKey))) return
+      e.preventDefault()
+      doShortcut(name)
+    }
+    document.addEventListener('keydown', onShortcutKey)
+    const destroyBase = api.destroy
+    api.destroy = () => {
+      destroyBase()
+      document.removeEventListener('keydown', onShortcutKey)
+      clearTimeout(flashTimer)
+      if (palette) palette.close(false)
+    }
+    // Buttons name their key in the tooltip.
+    for (const [btn, name] of [[exportBtn, 'export'], [viewsBtn, 'views'], [countsBtn, 'counts'], [lookBtn, 'appearance'], [queryBtn, 'where']]) {
+      btn.title = `${btn.title} (${keyHint(name)})`
+    }
+
     const initial = defaultColumns.slice()
     for (const col of restoreMarks()) initial.push(col.name)
     counts.refreshFields()
@@ -1910,6 +2330,7 @@ export function mount(el, x) {
       const pending = ds.fields.map((f) => f.name)
       const step = async () => {
         let name
+        if (dead) return
         while ((name = pending.shift()) !== undefined && ds.peek(name)) { /* already decoded */ }
         if (name === undefined) {
           timings.allDecoded = performance.now() - t0
@@ -1921,4 +2342,287 @@ export function mount(el, x) {
       idle(step)
     }
   }
+}
+
+/** A storage object that lives only as long as the page. */
+function memoryStorage() {
+  const m = new Map()
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null),
+    setItem: (k, v) => m.set(k, String(v)),
+    removeItem: (k) => m.delete(k),
+  }
+}
+
+/** Text standing in for decrypted bytes in a fingerprint. */
+function bytesText(bytes) {
+  let s = `bytes|${bytes.length}|`
+  for (let i = 0; i < Math.min(bytes.length, 3072); i++) s += String.fromCharCode(bytes[i])
+  for (let i = Math.max(3072, bytes.length - 1024); i < bytes.length; i++) s += String.fromCharCode(bytes[i])
+  return s
+}
+
+/** True when the widget fills a page of its own (a saved file or the browser view). */
+function isStandalone(el) {
+  return !!el.parentElement && el.parentElement.id === 'htmlwidget_container' &&
+    !/[?&]viewer_pane=1/.test(window.location.search)
+}
+
+const tabLabel = (name) => (name.length > 28 ? name.slice(0, 26) + '…' : name)
+
+/**
+ * The widget: one viewer per open dataset, shown as tabs once there is more
+ * than one. The data from R is the first tab; files opened in the browser
+ * (Open, the O key, or dropped on the viewer) are added as tabs. With no
+ * data from R the widget starts as a blank page that opens files.
+ * @param {HTMLElement} el the htmlwidget element
+ * @param {object} x payload from R
+ * @returns {object} the first viewer's API (or the blank page's)
+ */
+export function mount(el, x) {
+  if (el.pqshell) el.pqshell.destroy()
+  else if (el.pqview && el.pqview.destroy) el.pqview.destroy()
+  el.textContent = ''
+  // Older versions drew the viewer on this element itself.
+  el.classList.remove('pqv', 'pqv-standalone', 'pqv-minimal')
+  for (const k of Object.keys(el.dataset)) delete el.dataset[k]
+  el.classList.add('pqv-shell')
+  x = x || {}
+  const standalone = isStandalone(el)
+  const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null
+  const tabs = []
+  let active = -1
+  let blank = null
+  let toastTimer = 0
+
+  const currentRoot = () => (active >= 0 ? tabs[active].root : blank)
+
+  // A short message at the foot of the viewer (progress, or why a file failed).
+  const notify = (text, bad = false, ms = 6000) => {
+    const root = currentRoot()
+    if (!root) return
+    let toast = root.querySelector(':scope > .pqv-toast')
+    if (!toast) {
+      toast = h('div', { class: 'pqv-toast' })
+      root.append(toast)
+    }
+    toast.textContent = text
+    toast.setAttribute('role', bad ? 'alert' : 'status')
+    toast.classList.toggle('pqv-toast-bad', bad)
+    toast.hidden = false
+    clearTimeout(toastTimer)
+    if (ms) toastTimer = setTimeout(() => { toast.hidden = true }, ms)
+  }
+
+  const renderTabs = () => {
+    for (const t of tabs) {
+      const strip = t.api && t.api.tabStrip
+      if (!strip) continue
+      strip.textContent = ''
+      strip.hidden = tabs.length < 2
+      tabs.forEach((u, k) => {
+        const on = k === active
+        const btn = h('button', {
+          class: 'pqv-tab', type: 'button', role: 'tab', 'aria-selected': String(on), tabindex: on ? '0' : '-1',
+          title: u.name, text: tabLabel(u.name), onclick: () => activate(k),
+        })
+        btn.addEventListener('keydown', (e) => {
+          const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0
+          if (!d) return
+          e.preventDefault()
+          activate((k + d + tabs.length) % tabs.length)
+          const next = tabs[active].api.tabStrip.querySelectorAll('.pqv-tab')[active]
+          if (next) next.focus()
+        })
+        const wrap = h('div', { class: on ? 'pqv-tabwrap pqv-tabwrap-on' : 'pqv-tabwrap' }, btn)
+        if (u.closable) {
+          wrap.append(h('button', {
+            class: 'pqv-tabclose', type: 'button', text: '×', title: `Close ${u.name}`, 'aria-label': `Close ${u.name}`,
+            onclick: () => closeTab(k),
+          }))
+        }
+        strip.append(wrap)
+      })
+      strip.append(h('button', {
+        class: 'pqv-tabopen', type: 'button', text: '+', title: 'Open another file (O)', 'aria-label': 'Open another file',
+        onclick: () => openFile(),
+      }))
+    }
+  }
+
+  const activate = (k) => {
+    if (k === active || !tabs[k]) return
+    const prev = active >= 0 ? tabs[active] : null
+    if (prev && prev.api && prev.api.grid) prev.api.grid.closePop()
+    active = k
+    tabs.forEach((t, j) => { t.root.hidden = j !== k })
+    const api = tabs[k].api
+    if (api && api.refreshLook) api.refreshLook()
+    el.pqview = api
+    renderTabs()
+  }
+
+  const addTab = (name, data, source, closable) => {
+    if (blank) {
+      blank.remove()
+      blank = null
+    }
+    const root = h('div')
+    el.append(root)
+    const tab = { name, root, closable, api: null }
+    tabs.push(tab)
+    // Shown before it is built, so it can measure itself.
+    for (const t of tabs) t.root.hidden = t !== tab
+    active = tabs.length - 1
+    tab.api = mountInstance(root, data, {
+      standalone,
+      widgetId: tabs.length === 1 ? () => el.id : () => '',
+      source,
+      openFile: () => openFile(),
+    })
+    el.pqview = tab.api
+    renderTabs()
+    return tab.api
+  }
+
+  const closeTab = (k) => {
+    const t = tabs[k]
+    if (!t || !t.closable) return
+    t.api.destroy()
+    t.root.remove()
+    tabs.splice(k, 1)
+    active = -1
+    if (tabs.length) activate(Math.min(k, tabs.length - 1))
+    else showBlank()
+  }
+
+  const openFiles = async (files) => {
+    for (const file of Array.from(files || [])) {
+      notify(`Reading ${file.name}…`, false, 0)
+      try {
+        const source = await readFile(file, (f) => notify(`Reading ${file.name}… ${Math.round(f * 100)}%`, false, 0))
+        const api = addTab(file.name, { title: file.name, digits: x.digits, theme: x.theme, font: x.font }, source, true)
+        await api.ready
+        notify(`Opened ${file.name}: ${source.ds.n.toLocaleString()} rows × ${source.ds.fields.length} columns.`, false, 3500)
+      } catch (err) {
+        notify(`Could not open ${file.name}: ${(err && err.message) || err}`, true, 9000)
+      }
+    }
+  }
+
+  let picker = null
+  const openFile = () => {
+    if (!picker) {
+      picker = h('input', { type: 'file', accept: OPEN_ACCEPT, multiple: '', class: 'pqv-offscreen', tabindex: '-1', 'aria-hidden': 'true' })
+      picker.addEventListener('change', () => {
+        const files = Array.from(picker.files || [])
+        picker.value = ''
+        openFiles(files)
+      })
+      el.append(picker)
+    }
+    picker.click()
+  }
+
+  // Drop a file anywhere on the viewer.
+  let dropDepth = 0
+  // Drags that start inside the viewer (columns in the list) are not files,
+  // whatever types Safari reports for them.
+  let innerDrag = false
+  const onDragStart = () => { innerDrag = true }
+  const onDragEnd = () => { innerDrag = false }
+  const hasFiles = (e) => !innerDrag && !!e.dataTransfer && Array.from(e.dataTransfer.types || []).includes('Files')
+  const dropHint = (on) => {
+    const root = currentRoot()
+    if (!root) return
+    let hint = root.querySelector(':scope > .pqv-drop')
+    if (on && !hint) {
+      hint = h('div', { class: 'pqv-drop' }, h('div', { class: 'pqv-drop-box', text: 'Drop to open as a new tab' }))
+      root.append(hint)
+    } else if (!on && hint) hint.remove()
+  }
+  const onDragEnter = (e) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    dropDepth++
+    dropHint(true)
+  }
+  const onDragOver = (e) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }
+  const onDragLeave = (e) => {
+    if (!hasFiles(e)) return
+    dropDepth = Math.max(0, dropDepth - 1)
+    if (!dropDepth) dropHint(false)
+  }
+  const onDrop = (e) => {
+    if (!hasFiles(e)) return
+    e.preventDefault()
+    dropDepth = 0
+    dropHint(false)
+    openFiles(e.dataTransfer.files)
+  }
+  el.addEventListener('dragstart', onDragStart)
+  el.addEventListener('dragend', onDragEnd)
+  el.addEventListener('dragenter', onDragEnter)
+  el.addEventListener('dragover', onDragOver)
+  el.addEventListener('dragleave', onDragLeave)
+  el.addEventListener('drop', onDrop)
+
+  // With nothing to show: a page that opens files.
+  const onBlankKey = (e) => {
+    if (!blank || e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
+    const t = e.target
+    if (!(el.contains(t) || (standalone && (t === document.body || t === document.documentElement)))) return
+    if (e.key === 'o') {
+      e.preventDefault()
+      openFile()
+    }
+  }
+  document.addEventListener('keydown', onBlankKey)
+  function showBlank() {
+    const look = readAppearance(loadPref, x)
+    blank = h('div', { class: 'pqv pqv-blank' })
+    applyAppearance(blank, look, !!(media && media.matches))
+    el.append(blank)
+    if (standalone) {
+      // the page around the viewer takes its background
+      blank.classList.add('pqv-standalone')
+      const color = getComputedStyle(blank).backgroundColor
+      document.documentElement.style.background = color
+      document.body.style.background = color
+    }
+    const openBtn = h('button', { class: 'pqv-btn pqv-blank-open', type: 'button', text: 'Open a file…', onclick: () => openFile() })
+    blank.append(h('div', { class: 'pqv-blank-box' },
+      h('div', { class: 'pqv-blank-title', text: x.title || 'pqview' }),
+      h('p', { class: 'pqv-blank-text', text: 'Drop a CSV, TSV, Excel (.xlsx) or parquet file here, or' }),
+      openBtn,
+      h('p', { class: 'pqv-blank-note', text: 'Files are read in this browser; nothing is uploaded. Press O to open, and open more files as tabs.' })))
+    el.pqview = blank.pqview = { blank: true, ready: Promise.resolve(), openFiles, destroy() {} }
+  }
+
+  const shell = {
+    get tabs() { return tabs.map((t) => ({ name: t.name, api: t.api, closable: t.closable })) },
+    get active() { return active },
+    activate, closeTab, openFile, openFiles, notify,
+    destroy() {
+      for (const t of tabs) t.api.destroy()
+      clearTimeout(toastTimer)
+      document.removeEventListener('keydown', onBlankKey)
+      el.removeEventListener('dragstart', onDragStart)
+      el.removeEventListener('dragend', onDragEnd)
+      el.removeEventListener('dragenter', onDragEnter)
+      el.removeEventListener('dragover', onDragOver)
+      el.removeEventListener('dragleave', onDragLeave)
+      el.removeEventListener('drop', onDrop)
+      el.pqshell = null
+    },
+  }
+  el.pqshell = shell
+
+  if (x.data !== undefined && x.data !== null) return addTab(x.title || 'Data', x, null, false)
+  showBlank()
+  return el.pqview
 }

@@ -2,6 +2,7 @@
 
 import { parquetMetadata, parquetSchema, parquetRead, parquetReadObjects } from 'hyparquet'
 import { gunzipSync } from 'fflate'
+import { decompress as unzstd } from 'fzstd'
 import { buildColumn } from './store.js'
 
 export function decodeBase64(b64) {
@@ -18,9 +19,11 @@ export function decodeBase64(b64) {
   return out
 }
 
-// hyparquet decodes snappy itself; gzip pages go through fflate.
+// hyparquet decodes snappy itself; gzip pages go through fflate and zstd
+// (the default of polars and recent DuckDB) through fzstd.
 const compressors = {
   GZIP: (input, length) => gunzipSync(input, { out: new Uint8Array(length) }),
+  ZSTD: (input, length) => unzstd(input, new Uint8Array(length)),
 }
 
 // Keep dates and timestamps as epoch milliseconds instead of Date objects.
@@ -169,6 +172,45 @@ export function openDataset(buffer, meta = {}, opts = {}) {
     fields,
     column,
     footerStats,
+    has: (name) => byName.has(name),
+    peek: (name) => cache.get(name) || null,
+  }
+}
+
+/** The type tag shown for a column built from plain values. */
+function tagFor(info) {
+  if (info.kind === 'date') return 'date'
+  if (info.kind === 'datetime') return 'dttm'
+  if (info.base === 'boolean') return 'lgl'
+  if (info.base === 'number') return info.integer ? 'int' : 'dbl'
+  return 'chr'
+}
+
+/**
+ * A dataset from columns already in memory (an imported CSV or Excel sheet),
+ * with the same interface as openDataset().
+ * @param {{name: string, values: any[], info: object}[]} columns
+ * @param {object} [opts] { digits }
+ */
+export function datasetFromColumns(columns, opts = {}) {
+  const n = columns.length ? columns[0].values.length : 0
+  const fields = columns.map((c) => ({ name: c.name, tag: tagFor(c.info || {}), label: null, nested: false }))
+  const byName = new Map(columns.map((c) => [c.name, c]))
+  const cache = new Map()
+  return {
+    n,
+    fields,
+    async column(name) {
+      let col = cache.get(name)
+      if (!col) {
+        const c = byName.get(name)
+        col = buildColumn(name, c.values, { ...c.info, digits: opts.digits })
+        cache.set(name, col)
+        c.values = null // the column store holds the data from here on
+      }
+      return col
+    },
+    footerStats: () => null,
     has: (name) => byName.has(name),
     peek: (name) => cache.get(name) || null,
   }

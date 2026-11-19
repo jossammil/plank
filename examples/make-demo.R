@@ -97,4 +97,11 @@ expected <- list(
     demo$record_id[keep[order(-demo$income[keep], keep, na.last = TRUE)][1]]
   }
 )
+# A password-protected copy of the first 2,000 rows, for the unlock tests.
+locked <- demo[1:2000, ]
+save_pqview(locked, "examples/demo-locked.html", title = "Locked demo", password = "pqview test",
+  notes = "Protected notes", where = "region = 'West'")
+expected$locked_rows <- nrow(locked)
+expected$locked_west <- sum(locked$region == "West")
+
 writeLines(jsonlite::toJSON(expected, auto_unbox = TRUE, digits = NA, pretty = TRUE), "examples/demo-expected.json")

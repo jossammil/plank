@@ -83,3 +83,25 @@ test_that("notes are passed as one string, one line per element", {
   expect_identical(pqview(iris, notes = c("a", NA, "b"))$x$notes, "a\nb")
   expect_error(pqview(iris, notes = 1))
 })
+
+test_that("pqview(NULL) makes a blank viewer that opens files", {
+  w <- pqview(NULL, title = "Open data", theme = "dark", minimal = TRUE)
+  expect_s3_class(w, "pqview")
+  expect_null(w$x$data)
+  expect_identical(w$x$title, "Open data")
+  expect_identical(w$x$theme, "dark")
+  expect_true(w$x$minimal)
+
+  file <- tempfile(fileext = ".html")
+  on.exit(unlink(file))
+  out <- save_pqview(NULL, file)
+  html <- readChar(out, file.size(out), useBytes = TRUE)
+  expect_match(html, "PQView", fixed = TRUE)
+  expect_false(grepl('"data":', html, fixed = TRUE))
+})
+
+test_that("minimal is passed to the browser and checked", {
+  expect_false(pqview(mtcars)$x$minimal)
+  expect_true(pqview(mtcars, minimal = TRUE)$x$minimal)
+  expect_error(pqview(mtcars, minimal = NA))
+})

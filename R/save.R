@@ -27,6 +27,8 @@
 #' with the `zip` command line program (see [utils::zip()]).
 #'
 #' @param x A [pqview()] widget, or anything [pqview()] accepts as `data`.
+#'   `NULL` writes a blank viewer that opens the reader's own CSV, TSV, Excel
+#'   and parquet files.
 #' @param file Path of the file to write. See **File names** below.
 #' @param ... Passed to [pqview()] when `x` is not already a widget.
 #' @param page_title Text for the browser tab. Defaults to the widget title,

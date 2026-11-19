@@ -63,5 +63,7 @@
   "updated_dst_hour": 7,
   "visit_months": 37,
   "view_older_west": 9513,
-  "view_older_west_first": "R048742"
+  "view_older_west_first": "R048742",
+  "locked_rows": 2000,
+  "locked_west": 523
 }

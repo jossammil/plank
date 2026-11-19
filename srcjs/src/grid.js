@@ -25,6 +25,8 @@ const FUNNEL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="tru
   + '<path d="M2 3h12l-4.6 5.4V13l-2.8 1.2V8.4z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>'
 const PIN_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">'
   + '<path d="M6 2h4M7 2v4L4.5 9h7L9 6V2M8 9v5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>'
+const CORNER_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>'
 const OPT_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">'
   + '<path d="M2 4h7M13 4h1M2 8h2M8 8h6M2 12h8M14 12h0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/>'
   + '<circle cx="11" cy="4" r="1.8" stroke="currentColor" stroke-width="1.4" fill="none"/>'
@@ -60,6 +62,10 @@ export class Grid {
    * @param {(name: string) => void} [opts.onPin] pin or unpin a column
    * @param {(name: string) => object|null} [opts.getFormat] display format of a number column
    * @param {(name: string, fmt: object|null) => void} [opts.onFormat] the display format was changed
+   * @param {(range: object|null) => void} [opts.onSelect] the cell cursor or selected range changed
+   * @param {(range: object, withHeader: boolean) => void} [opts.onCopy] Ctrl/⌘+C on the grid
+   * @param {(row: number) => void} [opts.onOpenRow] Enter on a cell: show that row's details
+   * @param {() => void} [opts.onCorner] the button in the top-left corner (minimal view)
    */
   constructor(host, opts) {
     this.opts = opts
@@ -67,6 +73,7 @@ export class Grid {
     this.view = new Uint32Array(0)
     this.sort = []
     this.widths = new Map()
+    this.userWidths = new Set() // widths the user dragged; kept when the font changes
     this.lefts = [0]
     this.layoutVersion = 0
     this.pool = []
@@ -85,10 +92,35 @@ export class Grid {
     // The row numbers and pinned columns: drawn on a layer that stays at the
     // left edge while the rest scrolls sideways.
     this.pinEl = h('div', { class: 'pqv-rows pqv-pinrows' })
-    this.canvas = h('div', { class: 'pqv-canvas' }, this.rowsEl, this.pinEl)
-    this.scroller = h('div', { class: 'pqv-scroller', tabindex: '0', role: 'grid' }, this.head, this.canvas)
+    // The cell cursor and the selected range (from `anchor` to the cursor),
+    // kept as view positions and column names so they survive filtering and
+    // column changes. Each is drawn as one box over the scrolling layer and
+    // one over the pinned layer (painted in DOM order, so the pinned layer
+    // covers the scrolling part).
+    this.cursor = null
+    this.anchor = null
+    this.selMain = h('div', { class: 'pqv-sel', hidden: true })
+    this.curMain = h('div', { class: 'pqv-cur', hidden: true })
+    this.selPin = h('div', { class: 'pqv-sel', hidden: true })
+    this.curPin = h('div', { class: 'pqv-cur', hidden: true })
+    this.canvas = h('div', { class: 'pqv-canvas' }, this.rowsEl, this.selMain, this.curMain, this.pinEl, this.selPin, this.curPin)
+    this.scroller = h('div', {
+      class: 'pqv-scroller', tabindex: '0', role: 'grid',
+      'aria-label': 'Table. Arrow keys move between cells, Shift extends the selection, Ctrl or Command C copies it.',
+    }, this.head, this.canvas)
     this.empty = h('div', { class: 'pqv-empty' })
-    host.append(this.scroller, this.empty)
+    // In the top-left corner cell: switches the minimal view, and anchors
+    // popovers whose own button is hidden.
+    this.cornerBtn = h('button', {
+      class: 'pqv-corner', type: 'button', 'aria-pressed': 'false',
+      onclick: () => this.opts.onCorner && this.opts.onCorner(),
+    })
+    this.cornerBtn.innerHTML = CORNER_ICON
+    this.setCornerState(false)
+    this.live = h('div', { class: 'pqv-offscreen', 'aria-live': 'polite' })
+    host.append(this.scroller, this.empty, this.live)
+    this.scroller.addEventListener('keydown', (e) => this.onKey(e))
+    this.canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e))
 
     this.scroller.addEventListener('scroll', () => {
       // A popover attached to a cell would drift away from it.
@@ -131,7 +163,9 @@ export class Grid {
       if (e.key === 'Escape' && this.pop) {
         const anchor = this.pop.anchor
         this.closePop()
-        anchor.focus()
+        // A hidden button (minimal view) cannot take focus: give it to the table.
+        if (anchor.getClientRects().length) anchor.focus()
+        else this.scroller.focus({ preventScroll: true })
       }
     }
     document.addEventListener('pointerdown', this.onDocDown, true)
@@ -139,6 +173,7 @@ export class Grid {
   }
 
   destroy() {
+    clearTimeout(this.liveTimer)
     if (this.ro) this.ro.disconnect()
     cancelAnimationFrame(this.raf)
     document.removeEventListener('pointerdown', this.onDocDown, true)
@@ -165,12 +200,14 @@ export class Grid {
     this.buildHead()
     this.layout()
     this.updateSortIcons()
+    this.keepSelection()
     this.schedule()
   }
 
   setView(view, resetScroll = true) {
     this.view = view
     if (resetScroll) this.scroller.scrollTop = 0
+    this.keepSelection()
     this.schedule()
   }
 
@@ -185,21 +222,39 @@ export class Grid {
     this.schedule()
   }
 
-  /** Scroll just enough to show the row at view position `pos`. */
-  scrollToRow(pos) {
-    const sc = this.scroller
+  /**
+   * Vertical geometry. Past MAX_SCROLL_H the canvas is shorter than the rows
+   * would be, and the scroll position maps proportionally onto them.
+   */
+  geom() {
     const rowH = this.rowHeight()
-    const viewH = Math.max(rowH, sc.clientHeight - this.head.offsetHeight)
+    const viewH = Math.max(0, this.scroller.clientHeight - this.head.offsetHeight)
     const total = this.view.length * rowH
     const virt = Math.min(total, MAX_SCROLL_H)
-    const scaled = total > virt && virt > viewH
-    const top = scaled ? (sc.scrollTop / (virt - viewH)) * (total - viewH) : sc.scrollTop
-    const y = pos * rowH
+    return { rowH, viewH, total, virt, scaled: total > virt && virt > viewH }
+  }
+
+  /** Content offset (row index × row height) shown at the top for a scrollTop. */
+  topFromScroll(st, g) {
+    return g.scaled ? (st / (g.virt - g.viewH)) * (g.total - g.viewH) : st
+  }
+
+  /** The scrollTop that shows content offset `top` at the top. */
+  scrollFromTop(top, g) {
+    return g.scaled ? (top / (g.total - g.viewH)) * (g.virt - g.viewH) : top
+  }
+
+  /** Scroll just enough to show the row at view position `pos`. */
+  scrollToRow(pos) {
+    const g = this.geom()
+    const viewH = Math.max(g.rowH, g.viewH)
+    const top = this.topFromScroll(this.scroller.scrollTop, g)
+    const y = pos * g.rowH
     let want
     if (y < top) want = y
-    else if (y + rowH > top + viewH) want = y + rowH - viewH
+    else if (y + g.rowH > top + viewH) want = y + g.rowH - viewH
     else return
-    sc.scrollTop = scaled ? (want / (total - viewH)) * (virt - viewH) : want
+    this.scroller.scrollTop = this.scrollFromTop(want, g)
     this.schedule()
   }
 
@@ -217,6 +272,282 @@ export class Grid {
 
   schedule() {
     if (!this.raf) this.raf = requestAnimationFrame(() => this.render())
+  }
+
+  // ---- cell cursor and selection ------------------------------------------
+
+  /** Show the corner button as "minimal view on" or off. */
+  setCornerState(on) {
+    this.cornerBtn.setAttribute('aria-pressed', String(on))
+    const t = on ? 'Show the toolbar and panels again (M)' : 'Minimal view: just the table (M)'
+    this.cornerBtn.title = t
+    this.cornerBtn.setAttribute('aria-label', t)
+  }
+
+  /** View position of the first row in view. */
+  firstVisible() {
+    const g = this.geom()
+    return Math.min(Math.max(0, this.view.length - 1), Math.ceil(this.topFromScroll(this.scroller.scrollTop, g) / g.rowH))
+  }
+
+  colIndex(name) {
+    return this.cols.findIndex((c) => c.name === name) + 1
+  }
+
+  /** The selected block: rows r0..r1 (view positions) by layout columns c0..c1. */
+  range() {
+    if (!this.cursor || !this.anchor) return null
+    const a = this.colIndex(this.anchor.name)
+    const b = this.colIndex(this.cursor.name)
+    const n = this.view.length
+    if (!a || !b || !n) return null
+    const r0 = Math.min(this.anchor.pos, this.cursor.pos, n - 1)
+    const r1 = Math.min(Math.max(this.anchor.pos, this.cursor.pos), n - 1)
+    const c0 = Math.min(a, b)
+    const c1 = Math.max(a, b)
+    return {
+      r0, r1, c0, c1,
+      cols: this.cols.slice(c0 - 1, c1),
+      cells: (r1 - r0 + 1) * (c1 - c0 + 1),
+      row: this.view[Math.min(this.cursor.pos, n - 1)],
+      col: this.cols[b - 1],
+    }
+  }
+
+  /**
+   * Move the cell cursor to view position `pos`, layout column `c` (1 is the
+   * first data column). With `extend` the range grows from its anchor.
+   */
+  setCursor(pos, c, extend = false, reveal = true) {
+    const col = this.cols[c - 1]
+    if (!col || !this.view.length) return
+    pos = Math.max(0, Math.min(this.view.length - 1, pos))
+    this.cursor = { pos, name: col.name }
+    if (!extend || !this.anchor) this.anchor = { pos, name: col.name }
+    if (reveal) {
+      this.scrollToRow(pos)
+      this.revealColumn(c)
+    }
+    this.schedule()
+    this.selectionChanged()
+  }
+
+  clearSelection() {
+    if (!this.cursor) return
+    this.cursor = null
+    this.anchor = null
+    this.schedule()
+    this.selectionChanged()
+  }
+
+  selectionChanged() {
+    clearTimeout(this.liveTimer)
+    this.liveTimer = setTimeout(() => this.announce(), 120)
+    if (this.opts.onSelect) this.opts.onSelect(this.range())
+  }
+
+  announce() {
+    const r = this.range()
+    if (!r) {
+      this.live.textContent = ''
+      return
+    }
+    const t = this.displayCell(r.col, r.row, this.opts.getFormat ? this.opts.getFormat(r.col.name) : null)
+    let text = `Row ${(r.row + 1).toLocaleString()}, ${r.col.name}: ${t === null ? 'missing' : t}`
+    if (r.cells > 1) text += `. ${r.cells.toLocaleString()} cells selected`
+    this.live.textContent = text
+  }
+
+  /** After filtering or a column change: keep the cursor in range, or drop it. */
+  keepSelection() {
+    if (!this.cursor) return
+    const n = this.view.length
+    if (!n || !this.colIndex(this.cursor.name) || !this.colIndex(this.anchor.name)) {
+      this.clearSelection()
+      return
+    }
+    this.cursor.pos = Math.min(this.cursor.pos, n - 1)
+    this.anchor.pos = Math.min(this.anchor.pos, n - 1)
+    this.selectionChanged()
+  }
+
+  /** Scroll sideways just enough to show layout column `c` beside the pinned ones. */
+  revealColumn(c) {
+    if (c <= this.pinCount) return
+    const sc = this.scroller
+    const pinW = this.lefts[this.pinCount + 1]
+    const left = this.lefts[c]
+    const right = this.lefts[c + 1]
+    if (left < sc.scrollLeft + pinW) sc.scrollLeft = left - pinW
+    else if (right > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = Math.min(left - pinW, right - sc.clientWidth)
+  }
+
+  /** View position and layout column under a point; clamped to the table when `clamp`. */
+  hitTest(x, y, clamp = false) {
+    const n = this.view.length
+    const ncol = this.cols.length
+    if (!n || !ncol) return null
+    const sc = this.scroller
+    const sr = sc.getBoundingClientRect()
+    const g = this.geom()
+    let yIn = y - sr.top - this.head.offsetHeight
+    let xIn = x - sr.left
+    if (!clamp && (yIn < 0 || yIn >= g.viewH || xIn < 0 || xIn >= sc.clientWidth)) return null
+    yIn = Math.max(0, Math.min(g.viewH - 1, yIn))
+    xIn = Math.max(0, Math.min(sc.clientWidth - 1, xIn))
+    const top = this.topFromScroll(sc.scrollTop, g)
+    const pos = Math.max(0, Math.min(n - 1, Math.floor((top + yIn) / g.rowH)))
+    const pinW = this.lefts[this.pinCount + 1]
+    const cx = xIn < pinW ? xIn : xIn + sc.scrollLeft
+    let c = 1
+    while (c < ncol && this.lefts[c + 1] <= cx) c++
+    return { pos, c }
+  }
+
+  onPointerDown(e) {
+    if (e.button !== 0 || !e.target.closest || e.target.closest('.pqv-rownum')) return
+    const hit = this.hitTest(e.clientX, e.clientY)
+    if (!hit) return
+    this.setCursor(hit.pos, hit.c, e.shiftKey, false)
+    if (e.pointerType === 'touch') return
+    // Drag to select a block; near an edge the table scrolls.
+    let last = e
+    let timer = 0
+    const extend = () => {
+      const sc = this.scroller
+      const sr = sc.getBoundingClientRect()
+      const top = sr.top + this.head.offsetHeight
+      const dy = last.clientY < top + 8 ? -1 : last.clientY > sr.bottom - 8 ? 1 : 0
+      const dx = last.clientX < sr.left + 8 ? -1 : last.clientX > sr.right - 8 ? 1 : 0
+      if (dy) sc.scrollTop += dy * this.geom().rowH
+      if (dx) sc.scrollLeft += dx * 40
+      const at = this.hitTest(last.clientX, last.clientY, true)
+      if (at) this.setCursor(at.pos, at.c, true, false)
+    }
+    const move = (ev) => {
+      last = ev
+      extend()
+      if (!timer) timer = setInterval(extend, 60)
+    }
+    const up = () => {
+      clearInterval(timer)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+  }
+
+  onKey(e) {
+    // Keys typed in the header (filter boxes, buttons) are theirs.
+    if (e.target !== this.scroller) return
+    const n = this.view.length
+    const ncol = this.cols.length
+    if (!n || !ncol) return
+    const mod = e.ctrlKey || e.metaKey
+    const k = e.key
+    if (mod && !e.altKey && (k === 'c' || k === 'C')) {
+      const r = this.range()
+      if (r && this.opts.onCopy) {
+        e.preventDefault()
+        this.opts.onCopy(r, e.shiftKey)
+      }
+      return
+    }
+    if (mod && !e.altKey && (k === 'a' || k === 'A')) {
+      e.preventDefault()
+      this.anchor = { pos: 0, name: this.cols[0].name }
+      this.setCursor(n - 1, ncol, true, false)
+      return
+    }
+    const moves = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']
+    const c0 = this.cursor ? this.colIndex(this.cursor.name) : 0
+    if (!c0) {
+      // The first move puts the cursor on the first row in view.
+      if (!moves.includes(k)) return
+      e.preventDefault()
+      this.setCursor(this.firstVisible(), 1)
+      return
+    }
+    let pos = Math.min(this.cursor.pos, n - 1)
+    let c = c0
+    const g = this.geom()
+    const page = Math.max(1, Math.floor(g.viewH / g.rowH) - 1)
+    switch (k) {
+      case 'ArrowUp': pos = mod ? 0 : pos - 1; break
+      case 'ArrowDown': pos = mod ? n - 1 : pos + 1; break
+      case 'ArrowLeft': c = mod ? 1 : c - 1; break
+      case 'ArrowRight': c = mod ? ncol : c + 1; break
+      case 'Home': c = 1; if (mod) pos = 0; break
+      case 'End': c = ncol; if (mod) pos = n - 1; break
+      case 'PageUp': pos -= page; break
+      case 'PageDown': pos += page; break
+      case 'Tab':
+        // Tab moves along the row; at either end it leaves the table.
+        if (e.shiftKey ? c <= 1 : c >= ncol) return
+        e.preventDefault()
+        this.setCursor(pos, c + (e.shiftKey ? -1 : 1))
+        return
+      case 'Enter':
+        e.preventDefault()
+        if (this.opts.onOpenRow) this.opts.onOpenRow(this.view[pos])
+        return
+      case 'Escape': {
+        if (this.pop) return
+        const a = this.anchor
+        if (a && (a.pos !== this.cursor.pos || a.name !== this.cursor.name)) {
+          this.anchor = { ...this.cursor }
+          this.schedule()
+          this.selectionChanged()
+        } else this.clearSelection()
+        return
+      }
+      default:
+        return
+    }
+    e.preventDefault()
+    this.setCursor(pos, Math.max(1, Math.min(ncol, c)), e.shiftKey)
+  }
+
+  /** Place the cursor and range boxes for the rows drawn this frame. */
+  drawSelection(first, last, top, st, x0, rowH) {
+    const P = this.pinCount
+    const lefts = this.lefts
+    const place = (main, pin, r0, r1, a, b) => {
+      const v0 = Math.max(r0, first)
+      const v1 = Math.min(r1, last - 1)
+      if (v0 > v1) {
+        main.hidden = true
+        pin.hidden = true
+        return
+      }
+      const y = st + (v0 * rowH - top)
+      const hgt = (v1 - v0 + 1) * rowH
+      const box = (el, left, width) => {
+        el.hidden = false
+        el.style.transform = `translate(${left}px, ${y}px)`
+        el.style.width = width + 'px'
+        el.style.height = hgt + 'px'
+      }
+      if (a <= P) box(pin, x0 + lefts[a], lefts[Math.min(b, P) + 1] - lefts[a])
+      else pin.hidden = true
+      if (b > P) {
+        const l = lefts[Math.max(a, P + 1)]
+        box(main, l, lefts[b + 1] - l)
+      } else main.hidden = true
+    }
+    const r = this.range()
+    if (!r) {
+      for (const el of [this.selMain, this.selPin, this.curMain, this.curPin]) el.hidden = true
+      return
+    }
+    if (r.cells > 1) place(this.selMain, this.selPin, r.r0, r.r1, r.c0, r.c1)
+    else this.selMain.hidden = this.selPin.hidden = true
+    const c = this.colIndex(this.cursor.name)
+    const pos = Math.min(this.cursor.pos, this.view.length - 1)
+    place(this.curMain, this.curPin, pos, pos, c, c)
   }
 
   // ---- layout -----------------------------------------------------------
@@ -267,18 +598,19 @@ export class Grid {
    * size or row spacing, keeping the same first row in view.
    */
   remeasure() {
-    const before = this.rowHeight()
-    const firstRow = this.scroller.scrollTop / before
+    const g0 = this.geom()
+    const firstRow = this.topFromScroll(this.scroller.scrollTop, g0) / g0.rowH
     this.ctx = null
     this.rowH = 0
-    this.widths.clear()
+    // Automatic widths depend on the font; widths the user dragged stay.
+    for (const name of Array.from(this.widths.keys())) if (!this.userWidths.has(name)) this.widths.delete(name)
     // Header popovers go with the header; others (such as the Appearance
     // window that made this change) stay open.
     if (this.pop && this.head.contains(this.pop.anchor)) this.closePop()
     this.build(this.cols, this.pinCount)
     this.render() // sizes the canvas for the new row height
-    const after = this.rowHeight()
-    if (after !== before) this.scroller.scrollTop = Math.round(firstRow * after)
+    const g1 = this.geom()
+    if (g1.rowH !== g0.rowH) this.scroller.scrollTop = this.scrollFromTop(firstRow * g1.rowH, g1)
     this.schedule()
   }
 
@@ -311,7 +643,7 @@ export class Grid {
     this.head.append(
       h('div', { class: 'pqv-hcell pqv-hrownum', title: 'Row number in the original data' },
         h('div', { class: 'pqv-hname pqv-hname-static' }, '#'),
-        h('div', { class: 'pqv-hfilter' })),
+        h('div', { class: 'pqv-hfilter' }, this.cornerBtn)),
     )
     for (const col of this.cols) this.head.append(this.headCell(col))
   }
@@ -334,6 +666,7 @@ export class Grid {
       title: 'Drag to resize, double-click to fit',
       onpointerdown: (e) => this.startResize(e, col),
       ondblclick: () => {
+        this.userWidths.delete(col.name)
         this.widths.set(col.name, this.autoWidth(col))
         this.layout()
         this.schedule()
@@ -529,6 +862,7 @@ export class Grid {
     e.preventDefault()
     const startX = e.clientX
     const startW = this.widths.get(col.name)
+    this.userWidths.add(col.name)
     const move = (ev) => {
       this.widths.set(col.name, Math.max(MIN_W, Math.round(startW + ev.clientX - startX)))
       this.layout()
@@ -553,13 +887,17 @@ export class Grid {
     this.pop = null
   }
 
-  /** Show `el` as a popover under `anchor`, inside the widget. */
+  /**
+   * Show `el` as a popover under `anchor`, inside the widget. When the anchor
+   * is hidden (its toolbar is folded away in minimal view) the popover opens
+   * from the table's corner instead.
+   */
   openPop(anchor, el, focus, cell = false) {
     this.closePop()
     const root = this.opts.root
     root.append(el)
     const rr = root.getBoundingClientRect()
-    const ar = anchor.getBoundingClientRect()
+    const ar = (anchor.getClientRects().length ? anchor : this.cornerBtn).getBoundingClientRect()
     const left = Math.max(4, Math.min(ar.left - rr.left, rr.width - el.offsetWidth - 4))
     el.style.left = left + 'px'
     el.style.top = ar.bottom - rr.top + 4 + 'px'
@@ -787,20 +1125,16 @@ export class Grid {
       this.empty.hidden = true
     }
 
-    const headH = this.head.offsetHeight
-    this.empty.style.top = headH + 'px'
-    const viewH = Math.max(0, scroller.clientHeight - headH)
-    const rowH = this.rowHeight()
-    const total = n * rowH
-    const virt = Math.min(total, MAX_SCROLL_H)
+    this.empty.style.top = this.head.offsetHeight + 'px'
+    const g = this.geom()
+    const { rowH, viewH, virt } = g
     if (this.virt !== virt) {
       this.canvas.style.height = virt + 'px'
       this.virt = virt
     }
 
     const st = scroller.scrollTop
-    let top = st
-    if (total > virt && virt > viewH) top = (st / (virt - viewH)) * (total - viewH)
+    const top = this.topFromScroll(st, g)
     const first = Math.max(0, Math.floor(top / rowH) - OVERSCAN)
     const last = cols.length ? Math.min(n, Math.ceil((top + viewH) / rowH) + OVERSCAN) : 0
 
@@ -837,6 +1171,7 @@ export class Grid {
     this.pinEl.style.transform = `translate(${x0}px, ${y}px)`
     this.pinEl.classList.toggle('pqv-pinshadow', x0 > 0)
     this.head.classList.toggle('pqv-pinshadow', x0 > 0)
+    this.drawSelection(first, last, top, st, x0, rowH)
 
     const want = Math.max(0, last - first)
     const pool = this.pool

@@ -462,6 +462,14 @@ export class CountsPanel {
       sum += w || 0
     }
     this.table.style.width = fixed ? sum + 'px' : ''
+    // The grips are separators the keyboard can move: say how wide each column is.
+    for (const grip of this.table.querySelectorAll('.pqv-ccol-grip')) {
+      const th = grip.parentElement
+      const w = fixed ? this.colW.widths.get(grip.dataset.col) : Math.ceil(th.getBoundingClientRect().width)
+      grip.setAttribute('aria-valuemin', String(MIN_COL))
+      grip.setAttribute('aria-valuemax', '2000')
+      grip.setAttribute('aria-valuenow', String(w || 0))
+    }
   }
 
   /** Widths of the columns as the automatic layout draws them. */
@@ -470,7 +478,7 @@ export class CountsPanel {
     this.colW = null
     this.applyWidths()
     const widths = new Map()
-    for (const th of this.table.querySelectorAll('thead th')) widths.set(th.dataset.col, Math.round(th.getBoundingClientRect().width))
+    for (const th of this.table.querySelectorAll('thead th')) widths.set(th.dataset.col, Math.ceil(th.getBoundingClientRect().width))
     this.colW = was
     this.applyWidths()
     return widths

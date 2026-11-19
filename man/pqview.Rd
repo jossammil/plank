@@ -18,6 +18,8 @@ pqview(
   views = NULL,
   theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
   font = c("mono", "sans", "serif"),
+  minimal = FALSE,
+  password = NULL,
   top_offset = 0,
   rownames = NULL,
   compression = c("gzip", "snappy"),
@@ -29,7 +31,10 @@ pqview(
 }
 \arguments{
 \item{data}{A data frame (or something \code{\link[=as.data.frame]{as.data.frame()}} understands), or
-the path to a \code{.parquet} file.}
+the path to a \code{.parquet} file. \code{NULL} makes a blank viewer that opens
+CSV, TSV, Excel and parquet files chosen or dropped by the reader (see
+\strong{Opening files} below); only \code{title}, \code{theme}, \code{font}, \code{minimal} and
+\code{top_offset} apply to it.}
 
 \item{columns}{Names of the columns shown at first. \code{NULL} shows the first
 ten; \code{character(0)} starts with none selected.}
@@ -39,8 +44,9 @@ also used as the file name for CSV exports.}
 
 \item{notes}{Optional small text shown after the title, for notes such as
 the data source or date. Notes too long for the line are cut short, with
-a \strong{more} button that shows them in full. A character vector is shown
-one element per line when the notes are shown in full.}
+a \strong{more} button that shows them in full. The elements of a character
+vector are joined with " · " on the line, and shown one per line when the
+notes are shown in full.}
 
 \item{digits}{Significant digits used to display non-integer numbers.
 Exports always keep full precision.}
@@ -81,6 +87,14 @@ the Appearance window, and their choice is remembered in their browser.}
 \item{font}{Starting font for the table: \code{"mono"} (the default), \code{"sans"}
 or \code{"serif"}. Readers can switch in the Appearance window, and their
 choice is remembered in their browser.}
+
+\item{minimal}{Start in the minimal view, with only the table showing
+(its column filters included)? Readers switch it with the corner button
+above the row numbers or the \code{M} key, and their choice is remembered.}
+
+\item{password}{Encrypt the data with this password (a string), or
+\code{TRUE} to be asked for it, so it does not sit in your script. See
+\strong{Passwords} below. \code{NULL} (the default) leaves the data unencrypted.}
 
 \item{top_offset}{Extra space in pixels above the top band when the viewer
 fills a page of its own (a saved file or a browser tab), for example
@@ -185,7 +199,50 @@ Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
 or Terminal), an accent colour, the table font (mono, sans or serif),
 text size and row spacing. The choices are remembered in the reader's
 browser.
+\item The corner button above the row numbers (or \code{M}) switches the minimal
+view, which folds away everything but the table.
 }
+}
+
+\section{Keyboard}{
+
+Click a cell, or focus the table and press an arrow key, to get a cell
+cursor. Arrows, Home/End, Page Up/Down and Ctrl/Cmd+arrows move it;
+Shift+arrows, Shift+click or dragging select a block of cells, whose count,
+sum and mean appear beside the row count; Ctrl/Cmd+C copies the block
+(Ctrl/Cmd+Shift+C with the column names) and Enter opens the row panel.
+Single keys jump to the tools when the cursor is not in a text box: \code{/}
+search, \code{W} WHERE, \code{C} columns, \code{K} Counts, \code{E} Export, \code{V} Views, \code{A}
+Appearance, \code{M} minimal view, \code{O} open a file, \code{G} go to a row and \verb{?}
+lists them all. Ctrl/Cmd+K opens a command palette to run any action, go
+to or sort by any column, or switch views and themes by typing.
+}
+
+\section{Passwords}{
+
+With \code{password}, the data is encrypted in R (AES-256, with a key derived
+from the password by PBKDF2-SHA256 with 300,000 iterations, which takes a
+few seconds) and the viewer asks for the password before showing anything.
+Without it the file is unreadable, even to someone who opens its HTML
+source: the column names, factor levels, notes, query and views are
+encrypted with the data. Only the title stays readable, as the file's
+label. Keep the password safe: \strong{a lost password cannot be recovered}.
+Once unlocked, readers can use the viewer as usual, exports included;
+marks and saved views of a protected file are kept only until the page is
+closed, so nothing about the data is left in the browser. Unlocking needs
+a secure page: a saved file, the RStudio viewer or an https address.
+}
+
+\section{Opening files}{
+
+\strong{O}, the open button beside the palette button, or dropping files on
+the viewer opens CSV, TSV, Excel (.xlsx, first sheet) and parquet files as
+new tabs beside the data from R. The files are read in the reader's
+browser and never uploaded. Column types are guessed from CSV text
+(numbers, TRUE/FALSE, ISO dates and date-times; \code{NA}, \code{NULL} and empty
+cells are missing) and taken from the cell formats in Excel. Parquet files
+compressed with snappy, gzip or zstd can be opened. \code{pqview(NULL)} (or
+\code{save_pqview(NULL, "viewer.pqv.html")}) makes a blank viewer for this.
 }
 
 \examples{

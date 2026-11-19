@@ -1,5 +1,6 @@
-# Publishes examples/sample.pqv.html to GitHub Pages, so the sample opens in
-# a browser from a link: https://jossammil.github.io/pqview/
+# Publishes examples/sample.pqv.html (and the blank viewer, viewer.pqv.html) to
+# GitHub Pages, so they open in a browser from a link:
+# https://jossammil.github.io/pqview/ and https://jossammil.github.io/pqview/viewer.html
 name: pages
 
 on:
@@ -7,6 +8,7 @@ on:
     branches: [main]
     paths:
       - examples/sample.pqv.html
+      - examples/viewer.pqv.html
       - .github/workflows/pages.yaml
   workflow_dispatch:
 
@@ -32,6 +34,7 @@ jobs:
           mkdir site
           cp examples/sample.pqv.html site/index.html
           cp examples/sample.pqv.html site/sample.pqv.html
+          cp examples/viewer.pqv.html site/viewer.html
           touch site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

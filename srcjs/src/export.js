@@ -38,11 +38,14 @@ function int32Column(col, view) {
 const TSV_QUOTE = /[\t\r\n"]/
 const tsvQuote = (s) => (TSV_QUOTE.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s)
 
-/** Tab-separated text with a header row, as spreadsheets expect on paste. */
+/**
+ * Tab-separated text with a header row (unless opts.header is false), as
+ * spreadsheets expect on paste.
+ */
 export function toTSV(cols, view, opts = {}) {
   const ecols = exportColumns(cols, opts.rowNumbers)
   const naCell = tsvQuote(missingText(opts))
-  const lines = [ecols.map((c) => tsvQuote(c.name)).join('\t')]
+  const lines = opts.header === false ? [] : [ecols.map((c) => tsvQuote(c.name)).join('\t')]
   for (let r = 0; r < view.length; r++) {
     const i = view[r]
     let line = ''

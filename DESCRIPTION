@@ -1,6 +1,6 @@
 Package: pqview
 Title: Fast, Serverless Data Frame Viewer in a Single HTML File
-Version: 0.11.0
+Version: 0.12.0
 Authors@R: c(
     person("Joseph", "Miller", role = c("aut", "cre"), email = "jossammil@gmail.com"),
     person("Hyperparam", role = c("ctb", "cph"),
@@ -31,6 +31,8 @@ Imports:
     tools,
     utils
 Suggests:
+    askpass,
+    openssl,
     rstudioapi,
     shiny,
     testthat (>= 3.0.0),
