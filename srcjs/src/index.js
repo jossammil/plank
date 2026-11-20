@@ -915,8 +915,8 @@ function mountInstance(el, x, ctx = {}) {
         e.preventDefault()
         runQuerySoon.cancel()
         runQuery()
-      } else if (e.key === 'Escape' && queryInput.value) {
-        queryInput.value = ''
+      } else if (e.key === 'Escape') {
+        // Run what was typed; Esc then takes the keyboard back to the table.
         runQuerySoon.cancel()
         runQuery()
       }
@@ -2312,9 +2312,23 @@ function mountInstance(el, x, ctx = {}) {
       }
     }
     api.shortcut = doShortcut
+    // Esc in a text box (WHERE, search, a column filter, Find column) gives
+    // the keyboard back to the table, at the cell cursor, so arrows work again.
+    const backToTable = () => {
+      const n = state.view.length
+      if (grid.cursor && n) grid.setCursor(Math.min(grid.cursor.pos, n - 1), Math.max(1, grid.colIndex(grid.cursor.name)))
+      grid.scroller.focus({ preventScroll: true })
+    }
+    api.backToTable = backToTable
     const onShortcutKey = (e) => {
       if (el.hidden || e.defaultPrevented) return
       const t = e.target
+      if (e.key === 'Escape' && !e.altKey && !e.ctrlKey && !e.metaKey && el.contains(t) && isTyping(t) && !grid.pop &&
+        !t.closest('.pqv-pop, .pqv-detail, .pqv-palette, .pqv-lock')) {
+        e.preventDefault()
+        backToTable()
+        return
+      }
       // Keys pressed inside the viewer, or anywhere when it fills the page.
       if (!(el.contains(t) || (standalone && (t === document.body || t === document.documentElement)))) return
       const name = shortcutFor(e)

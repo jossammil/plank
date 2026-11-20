@@ -287,7 +287,9 @@ Click a cell, or focus the table and press an arrow key, for a cell cursor.
 | Keys | |
 |---|---|
 | Arrows, Tab, Page Up/Down | Move the cell cursor |
-| Ctrl/⌘ + arrows, Home, End | Jump to the edges |
+| Ctrl/⌘ + arrows, Home, End | Jump to the edges of the data |
+| Alt/Option + ← → | Jump to the left or right edge of the screen; press again for the next screen |
+| Esc (in a text box) | Back to the table from WHERE, search or a filter, with the cursor where it was |
 | Shift + arrows, Shift+click, drag | Select a block of cells; its count, sum and mean show beside the row count |
 | Ctrl/⌘ C, Ctrl/⌘ Shift C | Copy the block (with the column names) |
 | Ctrl/⌘ A | Select every shown cell |

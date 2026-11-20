@@ -161,6 +161,8 @@ export class Grid {
     }
     this.onDocKey = (e) => {
       if (e.key === 'Escape' && this.pop) {
+        // Handled: Esc does nothing else (such as leaving a text box).
+        e.preventDefault()
         const anchor = this.pop.anchor
         this.closePop()
         // A hidden button (minimal view) cannot take focus: give it to the table.
@@ -382,6 +384,57 @@ export class Grid {
     else if (right > sc.scrollLeft + sc.clientWidth) sc.scrollLeft = Math.min(left - pinW, right - sc.clientWidth)
   }
 
+  /**
+   * Alt/Option + Left/Right: the column at the screen's left or right edge.
+   * From a column that is not already at that edge, the edge column on screen
+   * now; from the edge itself, the edge one screen further along (setCursor
+   * then scrolls it into view at that edge). Pinned columns are always on
+   * screen, so they count as the left edge only when nothing else is left.
+   * @param {number} c current layout column (1-based)
+   * @param {-1|1} dir left or right
+   */
+  edgeColumn(c, dir) {
+    const ncol = this.cols.length
+    const P = this.pinCount
+    const sc = this.scroller
+    const pinW = this.lefts[P + 1]
+    const span = Math.max(1, sc.clientWidth - pinW)
+    const maxScroll = Math.max(0, this.lefts[ncol + 1] - sc.clientWidth)
+    // first or last unpinned column wholly between pinW and the right side,
+    // with the table scrolled to `x` (the widest one if none fits wholly)
+    const edgeAt = (x) => {
+      const lo = x + pinW
+      const hi = x + sc.clientWidth
+      let first = 0
+      let last = 0
+      for (let k = P + 1; k <= ncol; k++) {
+        if (this.lefts[k] >= lo - 0.5 && this.lefts[k + 1] <= hi + 0.5) {
+          if (!first) first = k
+          last = k
+        }
+      }
+      if (!first) {
+        // a column wider than the screen: the one under the middle
+        let k = P + 1
+        while (k < ncol && this.lefts[k + 1] <= x + pinW + span / 2) k++
+        first = last = k
+      }
+      return dir < 0 ? first : last
+    }
+    if (P >= ncol) return dir < 0 ? 1 : ncol
+    const here = edgeAt(sc.scrollLeft)
+    if (dir > 0) {
+      if (c < here) return here
+      if (c >= ncol) return ncol
+      const next = edgeAt(Math.min(maxScroll, sc.scrollLeft + span))
+      return Math.min(ncol, Math.max(next, c + 1))
+    }
+    if (c > here) return here
+    if (c <= P + 1) return 1
+    const prev = edgeAt(Math.max(0, sc.scrollLeft - span))
+    return Math.max(P + 1, Math.min(prev, c - 1))
+  }
+
   /** View position and layout column under a point; clamped to the table when `clamp`. */
   hitTest(x, y, clamp = false) {
     const n = this.view.length
@@ -478,8 +531,8 @@ export class Grid {
     switch (k) {
       case 'ArrowUp': pos = mod ? 0 : pos - 1; break
       case 'ArrowDown': pos = mod ? n - 1 : pos + 1; break
-      case 'ArrowLeft': c = mod ? 1 : c - 1; break
-      case 'ArrowRight': c = mod ? ncol : c + 1; break
+      case 'ArrowLeft': c = mod ? 1 : e.altKey ? this.edgeColumn(c, -1) : c - 1; break
+      case 'ArrowRight': c = mod ? ncol : e.altKey ? this.edgeColumn(c, 1) : c + 1; break
       case 'Home': c = 1; if (mod) pos = 0; break
       case 'End': c = ncol; if (mod) pos = n - 1; break
       case 'PageUp': pos -= page; break

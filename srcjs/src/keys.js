@@ -24,13 +24,15 @@ export const SHORTCUTS = [
   ['open', 'O', 'Open a file as a new tab'],
   ['goto', 'G', 'Go to a row'],
   ['help', '?', 'About Plank and keyboard shortcuts'],
+  ['table', 'Esc', 'Back to the table from a text box (WHERE, search, a filter), cursor where it was'],
 ]
 
 /** Keys of the table itself (focus on the table). */
 export const GRID_KEYS = [
   ['Arrows', 'Move the cell cursor'],
   ['Shift + arrows, click or drag', 'Select a block of cells'],
-  ['Ctrl/⌘ + arrows, Home, End', 'Jump to the edges'],
+  ['Ctrl/⌘ + arrows, Home, End', 'Jump to the edges of the data'],
+  ['Alt/Option + ← →', 'Jump to the left or right edge of the screen; again for the next screen'],
   ['Page Up, Page Down', 'Move by a screen'],
   ['Tab, Shift+Tab', 'Next or previous cell'],
   ['Ctrl/⌘ A', 'Select every shown cell'],

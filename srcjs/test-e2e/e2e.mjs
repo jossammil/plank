@@ -1926,6 +1926,42 @@ await phone.close()
   check('the last row is scrolled into view', await p.locator('.pqv-cur:not([hidden])').count() >= 1, true)
   await p.keyboard.press('Control+Home')
   check('Ctrl+Home goes to the first cell', await cur(), `0:${names[0]}`)
+  // Alt/Option + Left/Right: the screen's edges, then a screen further
+  {
+    const edge = () => g(() => {
+      const gr = document.querySelector('.pqv').plank.grid
+      const sc = gr.scroller
+      const P = gr.pinCount
+      const pinW = gr.lefts[P + 1]
+      const c = gr.colIndex(gr.cursor.name)
+      const fully = (k) => k > P && k <= gr.cols.length && gr.lefts[k] >= sc.scrollLeft + pinW - 0.5 && gr.lefts[k + 1] <= sc.scrollLeft + sc.clientWidth + 0.5
+      return { c, ncol: gr.cols.length, scroll: sc.scrollLeft, fully: fully(c), nextFully: fully(c + 1), prevFully: fully(c - 1), overflow: gr.lefts[gr.cols.length + 1] > sc.clientWidth + 1 }
+    })
+    const e0 = await edge()
+    if (e0.overflow) {
+      await p.keyboard.press('Alt+ArrowRight')
+      await p.waitForTimeout(60)
+      const e1 = await edge()
+      check('Alt+Right: the right edge of the screen, no scrolling', e1.fully && !e1.nextFully && e1.scroll === 0 && e1.c > 1, true)
+      await p.keyboard.press('Alt+ArrowRight')
+      await p.waitForTimeout(60)
+      const e2 = await edge()
+      check('Alt+Right again: the edge of the next screen', e2.c > e1.c && e2.fully && (e2.c === e2.ncol || !e2.nextFully) && e2.scroll > 0, true)
+      await p.keyboard.press('Alt+ArrowLeft')
+      await p.waitForTimeout(60)
+      const e3 = await edge()
+      check('Alt+Left: the left edge of the screen', e3.c < e2.c && e3.fully && !e3.prevFully && e3.scroll === e2.scroll, true)
+      await p.keyboard.press('Shift+Alt+ArrowRight')
+      await p.waitForTimeout(60)
+      const sel = await g(() => document.querySelector('.pqv').plank.grid.range())
+      check('Shift+Alt+Right selects to the edge', sel.cols.length > 1 && sel.r0 === sel.r1, true)
+      for (let k = 0; k < 6; k++) await p.keyboard.press('Alt+ArrowLeft')
+      await p.waitForTimeout(60)
+      check('Alt+Left repeated ends at the first column', await cur(), `0:${names[0]}`)
+    } else {
+      console.log('SKIP  Alt+arrows (every column fits on screen)')
+    }
+  }
   await p.keyboard.press('Enter')
   await p.waitForTimeout(150)
   check('Enter opens the row panel', await p.locator('.pqv-detail').isVisible(), true)
@@ -1973,6 +2009,29 @@ await phone.close()
   check('G goes to a row by its number', await g(() => document.querySelector('.pqv').plank.grid.range().row), 499)
   await p.keyboard.press('/')
   check('/ focuses the search', await g(() => document.activeElement.classList.contains('pqv-search')), true)
+  // Esc from a text box goes back to the table, cursor where it was
+  {
+    const onTable = () => g(() => document.activeElement === document.querySelector('.pqv').plank.grid.scroller)
+    await p.keyboard.press('Escape')
+    check('Esc from the search goes back to the table', await onTable(), true)
+    const before = await cur()
+    await p.keyboard.press('w')
+    check('W focuses the WHERE box', await g(() => document.activeElement.classList.contains('pqv-query-input')), true)
+    await p.keyboard.type('age > 50')
+    await p.keyboard.press('Escape')
+    await p.waitForTimeout(300)
+    check('Esc from WHERE goes back to the table', await onTable(), true)
+    check('  the condition is kept and applied', [await p.locator('.pqv-query-input').inputValue(), await g(() => document.querySelector('.pqv').plank.state.queryMask !== null)].join(), 'age > 50,true')
+    check('  the cursor is where it was', (await cur()).split(':')[1], before.split(':')[1])
+    await p.keyboard.press('ArrowDown')
+    check('  and arrows move it again', +(await cur()).split(':')[0], Math.min(+before.split(':')[0], await g(() => document.querySelector('.pqv').plank.state.view.length - 1)) + 1)
+    await p.locator('.pqv-hcell[data-name="age"] input').first().click()
+    await p.keyboard.press('Escape')
+    check('Esc from a column filter goes back to the table', await onTable(), true)
+    await p.locator('.pqv-query-input').fill('')
+    await p.locator('.pqv-query-input').press('Enter')
+    await p.waitForTimeout(300)
+  }
   await p.locator('.pqv-scroller').focus()
 
   // minimal view

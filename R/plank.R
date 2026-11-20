@@ -163,6 +163,9 @@
 #' @section Keyboard:
 #' Click a cell, or focus the table and press an arrow key, to get a cell
 #' cursor. Arrows, Home/End, Page Up/Down and Ctrl/Cmd+arrows move it;
+#' Alt/Option+Left/Right jumps to the left or right edge of the screen (again
+#' for the next screen); Esc in a text box (WHERE, search, a filter) returns
+#' to the table with the cursor where it was;
 #' Shift+arrows, Shift+click or dragging select a block of cells, whose count,
 #' sum and mean appear beside the row count; Ctrl/Cmd+C copies the block
 #' (Ctrl/Cmd+Shift+C with the column names) and Enter opens the row panel.
