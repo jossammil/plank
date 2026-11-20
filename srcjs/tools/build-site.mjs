@@ -1,5 +1,5 @@
-// Builds the public website into site-dist/ (published to the public
-// jossammil/plank repository by tools/publish-site.sh):
+// Builds the website into site-dist/, which .github/workflows/pages.yaml
+// publishes with GitHub Pages at https://jossammil.github.io/plank/:
 //   index.html   the landing page, from site/index.template.html
 //   demo.html    the 100,000-row Plank demo (examples/demo.html, from make-demo.R)
 //   viewer.html  the blank viewer (examples/viewer.plank.html)
@@ -99,16 +99,4 @@ writeFileSync(path.join(out, 'index.html'), html)
 copyFileSync(demo, path.join(out, 'demo.html'))
 copyFileSync(viewer, path.join(out, 'viewer.html'))
 writeFileSync(path.join(out, '.nojekyll'), '')
-writeFileSync(path.join(out, 'README.md'), `# Plank
-
-${ABOUT.lead} ${ABOUT.file} *${ABOUT.credit}*
-
-This repository is the public website, <https://jossammil.github.io/plank/>:
-
-- \`index.html\`: about, features, size and speed, keyboard shortcuts
-- \`demo.html\`: the Plank demo, 100,000 fake records with 30 columns of every type
-- \`viewer.html\`: a blank viewer for your own CSV, TSV, Excel and parquet files
-
-It is generated; please do not edit it by hand.
-`)
 console.log(`site-dist: index.html, demo.html (${fill.DEMO_MB} MB), viewer.html (Plank ${version})`)

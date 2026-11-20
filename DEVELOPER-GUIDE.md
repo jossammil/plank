@@ -61,7 +61,7 @@ anyone can open.
 ## 2. Repository map
 
 ```
-plank-app/
+plank/
 ├── DESCRIPTION, NAMESPACE, LICENSE      R package metadata (NAMESPACE is generated)
 ├── R/                                   the R package code
 │   ├── plank.R      plank() (builds the payload), Shiny bindings, all main docs
@@ -93,9 +93,8 @@ plank-app/
 │   ├── make-viewer.R                    writes viewer.plank.html (blank), kept in git
 │   ├── bench.R                          size and speed numbers for the site (R side)
 │   └── *.html                           generated pages (only viewer.plank.html is committed)
-├── site/                                the public website: index template and bench.json
-├── tools/publish-site.sh                builds the site and pushes it to the public repo
-├── .github/workflows/                   CI: R-CMD-check.yaml, js.yaml
+├── site/                                the website: index.template.html and bench.json
+├── .github/workflows/                   CI: R-CMD-check.yaml, js.yaml, pages.yaml
 ├── README.md                            user documentation
 └── DEVELOPER-GUIDE.md                   this file
 ```
@@ -419,7 +418,7 @@ The most common confusing failure is testing an old demo page.
 | srcjs/ | `npx playwright install webkit` | Download WebKit for Playwright |
 | root | `Rscript examples/make-demo.R` | demo.html, demo-locked.html, demo-expected.json |
 | root | `Rscript examples/make-viewer.R` | viewer.plank.html (committed) |
-| root | `tools/publish-site.sh` | builds the site into `site-dist/` and pushes it to the public `jossammil/plank` repo |
+| srcjs | `node tools/build-site.mjs` | builds the website into `site-dist/` (needs examples/demo.html and viewer.plank.html) |
 | root (R) | `devtools::document()` | Regenerate `man/` and `NAMESPACE` from roxygen comments |
 | root (R) | `devtools::test()` | R tests |
 | root (R) | `devtools::load_all()` | Load the package from source without installing |
@@ -474,19 +473,19 @@ The version appears in four places; keep them equal:
 - `srcjs/package.json` (`"version"`)
 - `srcjs/package-lock.json` (twice, near the top)
 
-### Refresh the public site
+### The website
 
-The site is a separate public repository, `jossammil/plank`, served by
-GitHub Pages at <https://jossammil.github.io/plank/>. This repository
-(`plank-app`) is private, so it cannot serve Pages itself on the free plan.
+<https://jossammil.github.io/plank/> is built from this repository by the
+`pages.yaml` workflow on every push that touches the site, the viewer or the
+R code: it runs `examples/make-demo.R` and `make-viewer.R`, then
+`srcjs/tools/build-site.mjs`, which fills `site/index.template.html` with the
+about text and shortcuts from `srcjs/src/keys.js` and the numbers from
+`site/bench.json`. To preview it locally, run the same three steps and open
+`site-dist/index.html`.
 
-1. Optionally re-measure the size and speed numbers:
-   `Rscript examples/bench.R` then `node srcjs/tools/bench-open.mjs`
-   (both update `site/bench.json`).
-2. `tools/publish-site.sh` rebuilds the demo and the blank viewer, runs
-   `srcjs/tools/build-site.mjs` (the landing page, with the about text and
-   shortcuts taken from `srcjs/src/keys.js`), and pushes `site-dist/` to the
-   public repo. Pages republishes within a minute.
+To refresh the size and speed numbers (they are measured on your machine,
+not in CI): `Rscript examples/bench.R`, then `node srcjs/tools/bench-open.mjs`
+from `srcjs/`; commit `site/bench.json`.
 
 ### Before a release (checklist)
 
@@ -525,10 +524,9 @@ payload made by R (to test that R's encryption decrypts in JavaScript).
 
 | Workflow | Jobs |
 |---|---|
-| `R-CMD-check.yaml` | `R CMD check --as-cran` on Windows and Ubuntu (two R versions); a job on Ubuntu that installs from GitHub with `remotes::install_github()` and saves a viewer. macOS is left out because private repositories pay 10× Actions minutes for it |
-| `js.yaml` | Unit tests; a check that the committed bundle matches the sources; e2e in Chromium and WebKit on Ubuntu (builds the demo first) |
-
-The public site is not built by CI; see **Refresh the public site**.
+| `R-CMD-check.yaml` | `R CMD check --as-cran` on macOS, Windows and Ubuntu (two R versions); a job that installs from GitHub with `remotes::install_github()` and saves a viewer |
+| `js.yaml` | Unit tests; a check that the committed bundle matches the sources; e2e in Chromium and WebKit (builds the demo first) |
+| `pages.yaml` | Builds the website (landing page, demo, blank viewer) and publishes it with GitHub Pages |
 
 Results: the Actions tab on GitHub, or `gh run list` / `gh run view <id>
 --log-failed` in a terminal.

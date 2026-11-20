@@ -1,7 +1,7 @@
 # Plank
 
-[![R-CMD-check](https://github.com/jossammil/plank-app/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/jossammil/plank-app/actions/workflows/R-CMD-check.yaml)
-[![js](https://github.com/jossammil/plank-app/actions/workflows/js.yaml/badge.svg)](https://github.com/jossammil/plank-app/actions/workflows/js.yaml)
+[![R-CMD-check](https://github.com/jossammil/plank/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/jossammil/plank/actions/workflows/R-CMD-check.yaml)
+[![js](https://github.com/jossammil/plank/actions/workflows/js.yaml/badge.svg)](https://github.com/jossammil/plank/actions/workflows/js.yaml)
 
 Plank is a data viewer that runs entirely in your browser: no server, no
 install, nothing uploaded. A plank file (`.plank.html`) is one web page with
@@ -15,8 +15,8 @@ shared drive, and needs no R session, server or internet connection.
 
 ![Plank showing a filtered 100,000-row table](man/figures/plank.png)
 
-The public site, **<https://jossammil.github.io/plank/>**, has the about
-text, features, size and speed numbers and keyboard shortcuts, plus:
+**The website, <https://jossammil.github.io/plank/>**, has the features,
+size and speed numbers and keyboard shortcuts, plus:
 
 - **[the Plank demo](https://jossammil.github.io/plank/demo.html)**: 100,000
   fake records with 30 columns of every type, about 8 MB;
@@ -24,19 +24,13 @@ text, features, size and speed numbers and keyboard shortcuts, plus:
   your own CSV, TSV, Excel and parquet files, read in your browser and never
   uploaded.
 
-The site lives in the public repository
-[jossammil/plank](https://github.com/jossammil/plank); this repository
-(`plank-app`, private) holds the R package and the viewer's source.
-
 ## Install
 
-On any machine with R 4.2 or later (macOS, Windows or Linux). The
-repository is private, so installing needs a GitHub token that can read it
-(set as `GITHUB_PAT`, for example with `usethis::edit_r_environ()`):
+On any machine with R 4.2 or later (macOS, Windows or Linux):
 
 ```r
 install.packages("remotes")
-remotes::install_github("jossammil/plank-app")
+remotes::install_github("jossammil/plank")
 ```
 
 Plank is pure R plus prebuilt JavaScript, so no Rtools, Xcode or Node is
