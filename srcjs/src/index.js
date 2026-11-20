@@ -1,6 +1,6 @@
 // pqview: wires the dataset, picker, grid, query bar and toolbar together.
 
-import { h, debounce, idle } from './dom.js'
+import { h, debounce, idle, COPY_ICON } from './dom.js'
 import { decodeBase64, openDataset } from './load.js'
 import { computeView, emptySpec, isActive, hasOptions, compileRegex } from './filters.js'
 import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } from './query.js'
@@ -29,7 +29,6 @@ import {
 } from './views.js'
 
 const DEFAULT_VISIBLE = 10
-const COPY_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg>'
 
 function formatBytes(b) {
   if (b < 1024) return `${b} B`
@@ -96,6 +95,8 @@ const PALETTE_ICON = svg('<path d="M8 1.75a6.25 6.25 0 0 0 0 12.5c.85 0 1.35-.55
   '<circle cx="4.9" cy="7.6" r=".95" fill="currentColor" stroke="none"/><circle cx="6.9" cy="4.7" r=".95" fill="currentColor" stroke="none"/>' +
   '<circle cx="10.2" cy="4.9" r=".95" fill="currentColor" stroke="none"/>')
 const OPEN_ICON = svg('<path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.5 1.5h4.5A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z"/><path d="M8 7v4M6 9h4"/>')
+const HELP_ICON = svg('<circle cx="8" cy="8" r="6.25"/><path d="M6.2 6.3a1.85 1.85 0 1 1 2.6 1.7c-.5.25-.8.6-.8 1.15v.35"/>' +
+  '<circle cx="8" cy="11.6" r=".9" fill="currentColor" stroke="none"/>')
 const LOCK_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/><path d="M12 14.5v2.5"/></svg>'
 const CHEVRON = '<svg viewBox="0 0 16 16" width="10" height="10" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>'
 const QUERY_EXAMPLES = [
@@ -165,7 +166,7 @@ function mountInstance(el, x, ctx = {}) {
   let look = readAppearance(loadPref, x)
   applyAppearance(el, look, systemDark())
   const prefs = {
-    query: loadPref('query') !== '0',
+    query: loadPref('query') === '1' || !!(x.where && String(x.where).trim()),
     full: loadPref('fullQuery') === '1',
     pickerWidth: +loadPref('pickerWidth') || 0,
     naMode: NA_MODES.some((m) => m.key === loadPref('naText')) ? loadPref('naText') : 'empty',
@@ -340,6 +341,11 @@ function mountInstance(el, x, ctx = {}) {
       'aria-label': 'Open a file', onclick: () => ctx.openFile(),
     }) : null
     if (openBtn) openBtn.innerHTML = OPEN_ICON
+    const helpBtn = h('button', {
+      class: 'pqv-pref pqv-pref-icon pqv-pref-help', type: 'button', title: 'Keyboard shortcuts (?)',
+      'aria-label': 'Keyboard shortcuts', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+    })
+    helpBtn.innerHTML = HELP_ICON
 
     // ---- title band: title, notes, row count and data sizes ----------------
     const sizeData = h('div', { class: 'pqv-size pqv-size-data' })
@@ -361,7 +367,7 @@ function mountInstance(el, x, ctx = {}) {
         selInfo,
         status,
         h('div', { class: 'pqv-sizes' }, sizeData, sizeExport),
-        h('div', { class: 'pqv-prefs' }, openBtn, lookBtn)))
+        h('div', { class: 'pqv-prefs' }, helpBtn, openBtn, lookBtn)))
     header.classList.toggle('pqv-header-empty', !x.title && !notes)
 
     // Left: what is shown and how it is chosen. Right: actions, then views.
@@ -646,11 +652,18 @@ function mountInstance(el, x, ctx = {}) {
     const showLook = (next) => {
       const metrics = (a) => [effectiveFont(a), a.size, rowHeight(a)].join()
       const remeasure = metrics(next) !== metrics(look)
+      const moved = (next.controls || 'top') !== (look.controls || 'top')
       look = next
       applyAppearance(el, look, systemDark())
       if (remeasure) grid.remeasure()
+      else if (moved) grid.schedule()
       paintPage()
       if (lookPanel) lookPanel.sync()
+      // The controls moved: the open Appearance window follows its button.
+      if (moved && lookPanel && grid.pop && grid.pop.anchor === lookBtn) {
+        const focus = lookPanel.el.contains(document.activeElement) ? document.activeElement : null
+        grid.openPop(lookBtn, lookPanel.el, focus)
+      }
       if (notesBox) notesBox.check()
     }
     const setLook = (key, value) => {
@@ -807,6 +820,8 @@ function mountInstance(el, x, ctx = {}) {
       },
       onChange: (names) => setSelected(names),
       onDetail: (name, box) => fillDetail(name, box),
+      copyText: (text) => copyText(text),
+      flash: (text, bad) => flash(text, bad),
     })
     api.picker = picker
     // Missing share and range from the file's footer, shown before a column is read.
@@ -884,7 +899,11 @@ function mountInstance(el, x, ctx = {}) {
     }
     api.runQuery = runQuery
     const runQuerySoon = debounce(runQuery, 300)
-    queryInput.addEventListener('input', runQuerySoon)
+    queryInput.addEventListener('input', () => {
+      // Typing a condition counts as choosing the bar: it stays open next time.
+      if (prefs.query) savePref('query', '1')
+      runQuerySoon()
+    })
     queryInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault()
@@ -2170,8 +2189,11 @@ function mountInstance(el, x, ctx = {}) {
       }
       const sheet = helpSheet()
       sheet.tabIndex = -1
-      grid.openPop(grid.cornerBtn, sheet, sheet)
+      // From the ? button in the top band; from the table's corner when the
+      // band is hidden (minimal view).
+      grid.openPop(helpBtn, sheet, sheet)
     }
+    helpBtn.addEventListener('click', () => openHelp())
 
     let palette = null
     const runAndReport = async (fn) => {
@@ -2511,7 +2533,7 @@ export function mount(el, x) {
       notify(`Reading ${file.name}…`, false, 0)
       try {
         const source = await readFile(file, (f) => notify(`Reading ${file.name}… ${Math.round(f * 100)}%`, false, 0))
-        const api = addTab(file.name, { title: file.name, digits: x.digits, theme: x.theme, font: x.font }, source, true)
+        const api = addTab(file.name, { title: file.name, digits: x.digits, theme: x.theme, font: x.font, controls: x.controls }, source, true)
         await api.ready
         notify(`Opened ${file.name}: ${source.ds.n.toLocaleString()} rows × ${source.ds.fields.length} columns.`, false, 3500)
       } catch (err) {

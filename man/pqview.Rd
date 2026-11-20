@@ -16,8 +16,10 @@ pqview(
   formats = NULL,
   counts = NULL,
   views = NULL,
-  theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
+  theme = c("auto", "classic", "modern", "dark", "vintage", "starship", "terminal",
+    "light"),
   font = c("mono", "sans", "serif"),
+  controls = c("top", "bottom"),
   minimal = FALSE,
   password = NULL,
   top_offset = 0,
@@ -33,8 +35,8 @@ pqview(
 \item{data}{A data frame (or something \code{\link[=as.data.frame]{as.data.frame()}} understands), or
 the path to a \code{.parquet} file. \code{NULL} makes a blank viewer that opens
 CSV, TSV, Excel and parquet files chosen or dropped by the reader (see
-\strong{Opening files} below); only \code{title}, \code{theme}, \code{font}, \code{minimal} and
-\code{top_offset} apply to it.}
+\strong{Opening files} below); only \code{title}, \code{theme}, \code{font}, \code{controls},
+\code{minimal} and \code{top_offset} apply to it.}
 
 \item{columns}{Names of the columns shown at first. \code{NULL} shows the first
 ten; \code{character(0)} starts with none selected.}
@@ -80,13 +82,19 @@ states of the table, as in
 
 \item{theme}{Starting colour theme: \code{"auto"} follows the reader's system
 light or dark setting; \code{"classic"}, \code{"modern"}, \code{"dark"}, \code{"vintage"}
-(sepia on cream) and \code{"terminal"} (green on black, all monospace) force
-one. \code{"light"} is another name for \code{"classic"}. Readers can switch in
-the Appearance window, and their choice is remembered in their browser.}
+(sepia on cream) and \code{"starship"} (a starship console: black, with
+orange and lilac panels) force one. \code{"light"} and \code{"terminal"} are old
+names for \code{"classic"} and \code{"starship"}. Readers can switch in the
+Appearance window, and their choice is remembered in their browser.}
 
 \item{font}{Starting font for the table: \code{"mono"} (the default), \code{"sans"}
 or \code{"serif"}. Readers can switch in the Appearance window, and their
 choice is remembered in their browser.}
+
+\item{controls}{Where the toolbar, WHERE bar and title band sit:
+\code{"top"} (the default) or \code{"bottom"}, below the table. Readers can switch
+in the Appearance window, and their choice is remembered in their
+browser.}
 
 \item{minimal}{Start in the minimal view, with only the table showing
 (its column filters included)? Readers switch it with the corner button
@@ -196,9 +204,14 @@ or copies them to the clipboard as tab-separated text.
 \item The search box has regular-expression (\verb{.*}) and \code{NOT} toggles.
 \item The faint palette button at the right of the top band opens the
 Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
-or Terminal), an accent colour, a text colour, the table font (mono, sans
-or serif), text size and row spacing. The choices are remembered in the reader's
-browser.
+or Starship), an accent colour, a text colour, the table font (mono, sans
+or serif), text size, row spacing and whether the controls sit above or
+below the table. The choices are remembered in the reader's browser.
+\item The faint \verb{?} button beside it lists the keyboard shortcuts.
+\item The faint copy buttons in the column list copy column names as R code,
+\code{c("a", "b")}: those in the table, or those a search found.
+\item The WHERE bar starts closed; once a reader opens it or types a
+condition, it stays open for them next time.
 \item The corner button above the row numbers (or \code{M}) switches the minimal
 view, which folds away everything but the table.
 }

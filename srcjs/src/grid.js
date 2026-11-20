@@ -900,8 +900,20 @@ export class Grid {
     const ar = (anchor.getClientRects().length ? anchor : this.cornerBtn).getBoundingClientRect()
     const left = Math.max(4, Math.min(ar.left - rr.left, rr.width - el.offsetWidth - 4))
     el.style.left = left + 'px'
-    el.style.top = ar.bottom - rr.top + 4 + 'px'
-    el.style.maxHeight = Math.max(120, rr.height - (ar.bottom - rr.top) - 12) + 'px'
+    // Below the anchor, unless it does not fit there and there is more room
+    // above (the controls sit at the bottom, or the anchor is low down).
+    const below = rr.height - (ar.bottom - rr.top) - 12
+    const above = ar.top - rr.top - 8
+    if (el.offsetHeight > below && above > below) {
+      const height = Math.min(el.offsetHeight, above)
+      el.style.maxHeight = Math.max(120, above) + 'px'
+      el.style.top = Math.max(4, ar.top - rr.top - 4 - height) + 'px'
+      el.classList.add('pqv-pop-up')
+    } else {
+      el.style.top = ar.bottom - rr.top + 4 + 'px'
+      el.style.maxHeight = Math.max(120, below) + 'px'
+      el.classList.remove('pqv-pop-up')
+    }
     anchor.setAttribute('aria-expanded', 'true')
     this.pop = { el, anchor, cell }
     if (focus) focus.focus()

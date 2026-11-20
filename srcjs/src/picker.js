@@ -5,8 +5,13 @@
 // the column at that place). Selected columns are listed first, in table
 // order. The panel can be resized from its right edge.
 
-import { h } from './dom.js'
+import { h, COPY_ICON } from './dom.js'
 import { typeTag, columnStats } from './store.js'
+
+/** Column names as an R vector: c("a", "b"). */
+export function rNames(names) {
+  return 'c(' + names.map((n) => '"' + String(n).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"').join(', ') + ')'
+}
 
 const GRIP = '<svg viewBox="0 0 8 14" width="8" height="14" aria-hidden="true" focusable="false">'
   + '<g fill="currentColor"><circle cx="2" cy="3" r="1.1"/><circle cx="6" cy="3" r="1.1"/>'
@@ -48,13 +53,14 @@ export class Picker {
       onclick: () => this.setAll(false, true),
     })
     const sep = () => h('span', { class: 'pqv-psep', 'aria-hidden': 'true', text: '·' })
+    this.foundCopy = this.copyButton(() => this.foundNames(), 'found')
     this.foundBar = h('div', { class: 'pqv-pactions pqv-pfound', hidden: true },
       this.foundCount, sep(), this.foundAll, sep(), this.foundNone, sep(),
       h('button', {
         class: 'pqv-link', type: 'button', text: 'Only', 'aria-label': 'Only the found columns',
         title: 'Show only the found columns in the table',
         onclick: () => this.onlyFound(),
-      }))
+      }), this.foundCopy)
 
     // Group headings carry links that act on just that group (and, while a
     // search is typed, just the found columns in it).
@@ -68,7 +74,8 @@ export class Picker {
       class: 'pqv-link pqv-pgroup-link', type: 'button', text: 'All', 'aria-label': 'All other columns',
       onclick: () => this.groupAction(true, this.otherAll),
     })
-    this.selHead = h('div', { class: 'pqv-pgroup' }, this.selLabel, this.selNone)
+    this.selCopy = this.copyButton(() => this.groupTargets().inTable, 'in the table')
+    this.selHead = h('div', { class: 'pqv-pgroup' }, this.selLabel, this.selCopy, this.selNone)
     this.selList = h('div', { class: 'pqv-pgroup-list pqv-psel' })
     this.otherHead = h('div', { class: 'pqv-pgroup' }, this.otherLabel, this.otherAll)
     this.otherList = h('div', { class: 'pqv-pgroup-list' })
@@ -105,6 +112,7 @@ export class Picker {
     this.setupTips()
 
     for (const f of opts.fields) this.addItem(f)
+    this.allCopy = this.copyButton(() => this.selected(), 'selected')
 
     host.append(
       h('div', { class: 'pqv-ptop' },
@@ -118,7 +126,8 @@ export class Picker {
           h('button', {
             class: 'pqv-link', type: 'button', text: 'None', title: 'Remove every column from the table',
             onclick: () => this.setAll(false, false),
-          })),
+          }),
+          this.allCopy),
         this.foundBar),
       this.list)
 
@@ -132,6 +141,47 @@ export class Picker {
     host.append(this.resizer)
     this.setWidth(opts.width || 270, false)
     this.place()
+  }
+
+  /**
+   * A faint button that copies column names as c("a", "b").
+   * @param {() => string[]} names the names to copy, worked out at click time
+   * @param {string} what how the tooltip describes them
+   */
+  copyButton(names, what) {
+    const b = h('button', { class: 'pqv-pcopy', type: 'button' })
+    b.innerHTML = COPY_ICON
+    b.dataset.what = what
+    b.addEventListener('click', async () => {
+      const list = names()
+      if (!list.length || !this.opts.copyText) return
+      const ok = await this.opts.copyText(rNames(list))
+      if (this.opts.flash) {
+        this.opts.flash(ok
+          ? `Copied ${list.length} column name${list.length === 1 ? '' : 's'}`
+          : 'Copying was blocked by the browser', !ok)
+      }
+    })
+    return b
+  }
+
+  /** Columns the search found, in file order. */
+  foundNames() {
+    return this.fileOrder.filter((name) => !this.items.get(name).row.hidden)
+  }
+
+  /** Tooltips and labels of the copy buttons for the current counts. */
+  updateCopy() {
+    const set = (b, k, text) => {
+      const t = `Copy the ${k} column name${k === 1 ? '' : 's'} ${text} as c("…")`
+      b.title = t
+      b.setAttribute('aria-label', t)
+      b.disabled = k === 0
+    }
+    const q = this.searching()
+    set(this.allCopy, this.order.length, 'in the table, in table order')
+    set(this.selCopy, this.groupTargets().inTable.length, q ? 'found in the table' : 'in the table')
+    if (q) set(this.foundCopy, this.foundNames().length, 'the search found')
   }
 
   setWidth(w, save) {
@@ -249,7 +299,7 @@ export class Picker {
 
   /** The table gets exactly the columns the search found, in file order. */
   onlyFound() {
-    const found = this.fileOrder.filter((name) => !this.items.get(name).row.hidden)
+    const found = this.foundNames()
     const keep = this.order.filter((name) => found.includes(name))
     this.order = keep.concat(found.filter((name) => !keep.includes(name)))
     this.place()
@@ -332,6 +382,7 @@ export class Picker {
     const found = inTable.length + others.length
     this.foundAll.title = `Add the ${found} found column${found === 1 ? '' : 's'} to the table`
     this.foundNone.title = `Remove the ${found} found column${found === 1 ? '' : 's'} from the table`
+    this.updateCopy()
   }
 
   emit() {

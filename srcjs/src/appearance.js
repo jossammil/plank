@@ -1,5 +1,5 @@
 // Appearance: colour theme, accent colour, text colour, table font, text
-// size and row spacing. The colours themselves live in pqview.css as token blocks; this
+// size, row spacing and where the controls sit. The colours themselves live in pqview.css as token blocks; this
 // module only picks which block applies and builds the settings window.
 
 import { h } from './dom.js'
@@ -10,7 +10,7 @@ export const THEMES = [
   ['modern', 'Modern', 'Crisp white, cool greys'],
   ['dark', 'Dark', 'Light text on dark grey'],
   ['vintage', 'Vintage', 'Sepia ink on cream paper'],
-  ['terminal', 'Terminal', 'Green phosphor on black, all monospace'],
+  ['starship', 'Starship', 'Starship console: black, with orange and lilac panels'],
 ]
 export const ACCENTS = [
   ['', 'Theme default'], ['blue', 'Blue'], ['teal', 'Teal'], ['green', 'Green'],
@@ -24,20 +24,24 @@ export const INKS = [
 export const FONTS = [['mono', 'Mono'], ['sans', 'Sans'], ['serif', 'Serif']]
 export const SIZES = [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]
 export const DENSITIES = [['compact', 'Compact'], ['normal', 'Normal'], ['roomy', 'Roomy']]
-export const APPEARANCE_KEYS = ['theme', 'accent', 'ink', 'font', 'size', 'density']
+export const PLACES = [['top', 'Top'], ['bottom', 'Bottom']]
+export const APPEARANCE_KEYS = ['theme', 'accent', 'ink', 'font', 'size', 'density', 'controls']
 
 const ROW_H = { compact: 22, normal: 26, roomy: 32 }
 
 const pick = (list, v) => (list.some((o) => o[0] === v) ? v : null)
 
-/** A theme name from R or a saved preference; 'light' is the old name of Classic. */
+// Old theme names: Light became Classic, Terminal became Starship.
+const OLD_THEMES = { light: 'classic', terminal: 'starship' }
+
+/** A theme name from R or a saved preference, old names included. */
 export function normalizeTheme(v) {
-  return pick(THEMES, v === 'light' ? 'classic' : v)
+  return pick(THEMES, OLD_THEMES[v] || v)
 }
 
 /**
  * The starting appearance: the reader's saved choices first, then the
- * author's (theme and font from R), then the defaults.
+ * author's (theme, font and controls from R), then the defaults.
  * @param {(key: string) => string|null} load saved preference, or null
  * @param {object} x payload from R
  */
@@ -52,16 +56,17 @@ export function readAppearance(load, x = {}) {
       pick(FONTS, x.font) || 'mono',
     size: pick(SIZES, load('size')) || 'normal',
     density: pick(DENSITIES, load('density')) || 'normal',
+    controls: pick(PLACES, load('controls')) || pick(PLACES, x.controls) || 'top',
   }
 }
 
 export const defaultAppearance = (x) => readAppearance(() => null, x)
 
 export const isDarkTheme = (theme, systemDark) =>
-  theme === 'dark' || theme === 'terminal' || (theme === 'auto' && !!systemDark)
+  theme === 'dark' || theme === 'starship' || (theme === 'auto' && !!systemDark)
 
-/** Terminal always uses monospace, whatever font is chosen. */
-export const effectiveFont = (a) => (a.theme === 'terminal' ? 'mono' : a.font)
+/** The table font. (Every theme now follows the reader's choice.) */
+export const effectiveFont = (a) => a.font
 
 export const rowHeight = (a) => ROW_H[a.density] || ROW_H.normal
 
@@ -76,6 +81,7 @@ export function applyAppearance(el, a, systemDark) {
   el.dataset.font = font
   el.dataset.size = a.size
   el.dataset.density = a.density
+  el.dataset.controls = a.controls || 'top'
   el.classList.toggle('pqv-mono', font === 'mono')
   el.classList.toggle('pqv-dark', isDarkTheme(a.theme, systemDark))
   el.style.setProperty('--pqv-row-h', rowHeight(a) + 'px')
@@ -152,7 +158,7 @@ export function appearancePanel({ get, set, reset }) {
   const font = seg('Font', FONTS, 'font')
   const size = seg('Text size', SIZES, 'size')
   const density = seg('Row spacing', DENSITIES, 'density')
-  const fontNote = h('div', { class: 'pqv-ap-note', text: 'Terminal always uses monospace.' })
+  const controls = seg('Controls', PLACES, 'controls')
   const row = (label, control, extra) => h('div', { class: 'pqv-ap-row' },
     h('span', { class: 'pqv-ap-k', text: label }), control.el, extra)
 
@@ -164,22 +170,22 @@ export function appearancePanel({ get, set, reset }) {
       h('div', { class: 'pqv-ap-head', text: 'Customize' }),
       row('Accent', accent),
       row('Text', ink),
-      row('Font', font, fontNote),
+      row('Font', font),
       row('Text size', size),
-      row('Row spacing', density)),
+      row('Row spacing', density),
+      row('Controls', controls)),
     h('div', { class: 'pqv-pop-foot pqv-ap-foot' },
       h('button', { class: 'pqv-link', type: 'button', text: 'Reset to defaults', onclick: () => reset() })))
 
   const sync = () => {
     const a = get()
-    const terminal = a.theme === 'terminal'
     theme.sync(a.theme)
     accent.sync(a.accent)
     ink.sync(a.ink)
-    font.sync(effectiveFont(a), terminal)
-    fontNote.hidden = !terminal
+    font.sync(effectiveFont(a))
     size.sync(a.size)
     density.sync(a.density)
+    controls.sync(a.controls || 'top')
   }
   sync()
   return { el, sync, focusTarget: () => theme.checked() }

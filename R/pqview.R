@@ -12,8 +12,8 @@
 #' @param data A data frame (or something [as.data.frame()] understands), or
 #'   the path to a `.parquet` file. `NULL` makes a blank viewer that opens
 #'   CSV, TSV, Excel and parquet files chosen or dropped by the reader (see
-#'   **Opening files** below); only `title`, `theme`, `font`, `minimal` and
-#'   `top_offset` apply to it.
+#'   **Opening files** below); only `title`, `theme`, `font`, `controls`,
+#'   `minimal` and `top_offset` apply to it.
 #' @param columns Names of the columns shown at first. `NULL` shows the first
 #'   ten; `character(0)` starts with none selected.
 #' @param title Optional title shown in the band above the toolbar. It is
@@ -48,12 +48,17 @@
 #'   `list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))`.
 #' @param theme Starting colour theme: `"auto"` follows the reader's system
 #'   light or dark setting; `"classic"`, `"modern"`, `"dark"`, `"vintage"`
-#'   (sepia on cream) and `"terminal"` (green on black, all monospace) force
-#'   one. `"light"` is another name for `"classic"`. Readers can switch in
-#'   the Appearance window, and their choice is remembered in their browser.
+#'   (sepia on cream) and `"starship"` (a starship console: black, with
+#'   orange and lilac panels) force one. `"light"` and `"terminal"` are old
+#'   names for `"classic"` and `"starship"`. Readers can switch in the
+#'   Appearance window, and their choice is remembered in their browser.
 #' @param font Starting font for the table: `"mono"` (the default), `"sans"`
 #'   or `"serif"`. Readers can switch in the Appearance window, and their
 #'   choice is remembered in their browser.
+#' @param controls Where the toolbar, WHERE bar and title band sit:
+#'   `"top"` (the default) or `"bottom"`, below the table. Readers can switch
+#'   in the Appearance window, and their choice is remembered in their
+#'   browser.
 #' @param password Encrypt the data with this password (a string), or
 #'   `TRUE` to be asked for it, so it does not sit in your script. See
 #'   **Passwords** below. `NULL` (the default) leaves the data unencrypted.
@@ -140,9 +145,14 @@
 #' * The search box has regular-expression (`.*`) and `NOT` toggles.
 #' * The faint palette button at the right of the top band opens the
 #'   Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
-#'   or Terminal), an accent colour, a text colour, the table font (mono, sans
-#'   or serif), text size and row spacing. The choices are remembered in the reader's
-#'   browser.
+#'   or Starship), an accent colour, a text colour, the table font (mono, sans
+#'   or serif), text size, row spacing and whether the controls sit above or
+#'   below the table. The choices are remembered in the reader's browser.
+#' * The faint `?` button beside it lists the keyboard shortcuts.
+#' * The faint copy buttons in the column list copy column names as R code,
+#'   `c("a", "b")`: those in the table, or those a search found.
+#' * The WHERE bar starts closed; once a reader opens it or types a
+#'   condition, it stays open for them next time.
 #' * The corner button above the row numbers (or `M`) switches the minimal
 #'   view, which folds away everything but the table.
 #'
@@ -202,8 +212,9 @@ pqview <- function(data,
                    formats = NULL,
                    counts = NULL,
                    views = NULL,
-                   theme = c("auto", "classic", "modern", "dark", "vintage", "terminal", "light"),
+                   theme = c("auto", "classic", "modern", "dark", "vintage", "starship", "terminal", "light"),
                    font = c("mono", "sans", "serif"),
+                   controls = c("top", "bottom"),
                    minimal = FALSE,
                    password = NULL,
                    top_offset = 0,
@@ -214,7 +225,9 @@ pqview <- function(data,
                    height = NULL,
                    elementId = NULL) {
   theme <- match.arg(theme)
+  theme <- switch(theme, terminal = "starship", light = "classic", theme)
   font <- match.arg(font)
+  controls <- match.arg(controls)
   compression <- match.arg(compression)
   stopifnot(
     is.null(columns) || is.character(columns),
@@ -229,7 +242,8 @@ pqview <- function(data,
   if (is.null(data)) {
     if (!is.null(password)) stop("`password` needs data to protect.", call. = FALSE)
     # A blank viewer: the reader opens files in it.
-    x <- list(theme = theme, font = font, top_offset = top_offset, digits = digits, minimal = minimal)
+    x <- list(theme = theme, font = font, controls = controls, top_offset = top_offset,
+              digits = digits, minimal = minimal)
     if (!is.null(title)) x$title <- title
     return(pqview_widget(x, width, height, elementId))
   }
@@ -263,6 +277,7 @@ pqview <- function(data,
     digits = digits,
     theme = theme,
     font = font,
+    controls = controls,
     top_offset = top_offset,
     minimal = minimal,
     nrow = enc$nrow,

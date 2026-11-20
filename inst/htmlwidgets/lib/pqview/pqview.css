@@ -2475,49 +2475,143 @@ select.pqv-input {
   --pqv-bar-neg: #e3b08f;
 }
 
-/* Terminal: green phosphor on black, monospace throughout. */
-.pqv[data-theme="terminal"],
-.pqv-ap-preview[data-theme="terminal"] {
-  --pqv-bg: #050805;
-  --pqv-fg: #41ff73;
-  --pqv-muted: #24a64a;
-  --pqv-line: #0e2a15;
-  --pqv-line-strong: #1b5229;
-  --pqv-head: #08120a;
-  --pqv-alt: #07100a;
-  --pqv-hover: #0c2413;
-  --pqv-accent: #41ff73;
-  --pqv-accent-fg: #021006;
-  --pqv-bad: #ff6b57;
-  --pqv-shadow: 0 8px 28px rgba(0, 0, 0, 0.8), 0 0 0 1px #1b5229;
-  --pqv-bar: #10391b;
-  --pqv-bar-on: #41ff73;
-  --pqv-bar-na: #4a3412;
-  --pqv-mark: #12301a;
-  --pqv-bar-neg: #5a4210;
-  --pqv-glow: rgba(65, 255, 115, 0.3);
+/* Starship: a starship console. Black, with rounded orange, lilac and
+   periwinkle panels, condensed capitals in the controls. The table keeps the
+   reader's font. */
+.pqv[data-theme="starship"],
+.pqv-ap-preview[data-theme="starship"] {
+  --pqv-bg: #000000;
+  --pqv-fg: #ffcc99;
+  --pqv-muted: #c49ac4;
+  --pqv-line: #2b1d2e;
+  --pqv-line-strong: #5d4360;
+  --pqv-head: #07050a;
+  --pqv-alt: #0b0910;
+  --pqv-hover: #1f1630;
+  --pqv-accent: #ff9900;
+  --pqv-accent-fg: #000000;
+  --pqv-bad: #ff6655;
+  --pqv-shadow: 0 8px 28px rgba(0, 0, 0, 0.85), 0 0 0 1px #5d4360;
+  --pqv-bar: #3b2c4d;
+  --pqv-bar-on: #9999ff;
+  --pqv-bar-na: #6a3434;
+  --pqv-mark: #2c2142;
+  --pqv-bar-neg: #cc6666;
+  --pqv-ss-orange: #ff9900;
+  --pqv-ss-lilac: #cc99cc;
+  --pqv-ss-blue: #9999ff;
+  --pqv-ss-peach: #ffcc99;
+  --pqv-ss-font: "Antonio", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
 }
 
-.pqv[data-theme="terminal"],
-.pqv-ap-preview[data-theme="terminal"] {
-  font-family: var(--pqv-mono-font);
-  text-shadow: 0 0 5px var(--pqv-glow);
+/* condensed capitals for the controls and labels, never for typed text */
+.pqv[data-theme="starship"] .pqv-header,
+.pqv[data-theme="starship"] .pqv-btn,
+.pqv[data-theme="starship"] .pqv-toggle,
+.pqv[data-theme="starship"] .pqv-hname,
+.pqv[data-theme="starship"] .pqv-pop-title,
+.pqv[data-theme="starship"] .pqv-tab,
+.pqv[data-theme="starship"] .pqv-pgroup-label,
+.pqv[data-theme="starship"] .pqv-query-label,
+.pqv[data-theme="starship"] .pqv-full-label {
+  font-family: var(--pqv-ss-font);
+  font-stretch: condensed;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
-.pqv[data-theme="terminal"] .pqv-header .pqv-title {
+.pqv[data-theme="starship"] .pqv-header .pqv-title {
+  color: var(--pqv-ss-orange);
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.1em;
 }
 
-.pqv[data-theme="terminal"] .pqv-btn,
-.pqv[data-theme="terminal"] .pqv-toggle,
-.pqv[data-theme="terminal"] .pqv-input,
-.pqv[data-theme="terminal"] .pqv-pop {
-  border-radius: 2px;
+/* The elbow: an orange bar over the title band that bends down the left
+   side, then lilac and periwinkle bars down the rows below it. */
+.pqv[data-theme="starship"] .pqv-header {
+  border-top: 7px solid var(--pqv-ss-orange);
+  border-left: 18px solid var(--pqv-ss-orange);
+  border-top-left-radius: 26px;
 }
 
-.pqv[data-theme="terminal"] .pqv-input::placeholder {
-  text-shadow: none;
+.pqv[data-theme="starship"] .pqv-toolbar {
+  border-top: 3px solid var(--pqv-bg);
+  border-left: 18px solid var(--pqv-ss-lilac);
+  border-bottom-color: var(--pqv-line);
+  background: var(--pqv-bg);
+}
+
+.pqv[data-theme="starship"] .pqv-querybar,
+.pqv[data-theme="starship"] .pqv-full,
+.pqv[data-theme="starship"] .pqv-counts {
+  border-left: 18px solid var(--pqv-ss-blue);
+}
+
+/* pill buttons: filled lilac, orange when on */
+.pqv[data-theme="starship"] .pqv-btn,
+.pqv[data-theme="starship"] .pqv-toggle {
+  border-color: var(--pqv-ss-lilac);
+  border-radius: 999px;
+  background: var(--pqv-ss-lilac);
+  color: #000000;
+  font-weight: 600;
+}
+
+.pqv[data-theme="starship"] .pqv-btn:hover:not(:disabled),
+.pqv[data-theme="starship"] .pqv-toggle:hover {
+  border-color: var(--pqv-ss-peach);
+  background: var(--pqv-ss-peach);
+  color: #000000;
+}
+
+.pqv[data-theme="starship"] .pqv-toggle[aria-pressed="true"],
+.pqv[data-theme="starship"] .pqv-btn[aria-pressed="true"] {
+  border-color: var(--pqv-ss-orange);
+  background: var(--pqv-ss-orange);
+  color: #000000;
+}
+
+.pqv[data-theme="starship"] .pqv-toggle[aria-pressed="true"]:focus-visible,
+.pqv[data-theme="starship"] .pqv-btn[aria-pressed="true"]:focus-visible {
+  outline-color: var(--pqv-ss-peach);
+}
+
+.pqv[data-theme="starship"] .pqv-input {
+  border-color: var(--pqv-ss-lilac);
+  border-radius: 999px;
+  background: #000000;
+}
+
+.pqv[data-theme="starship"] .pqv-pop {
+  border-color: var(--pqv-ss-lilac);
+  border-radius: 14px;
+}
+
+.pqv[data-theme="starship"] .pqv-hname {
+  color: var(--pqv-ss-peach);
+}
+
+/* the Appearance swatch: a small elbow and a lilac pill */
+.pqv-ap-preview[data-theme="starship"] {
+  border-left: 7px solid #ff9900;
+  border-top-left-radius: 12px;
+  font-family: "Antonio", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+  font-stretch: condensed;
+}
+
+.pqv-ap-preview[data-theme="starship"] .pqv-ap-pv-text {
+  color: #ff9900;
+}
+
+.pqv-ap-preview[data-theme="starship"] .pqv-ap-pv-line {
+  background: #9999ff;
+  opacity: 1;
+}
+
+.pqv-ap-preview[data-theme="starship"] .pqv-ap-pv-dot {
+  width: 14px;
+  border-radius: 4px;
+  background: #cc99cc;
 }
 
 /* Modern: rounder corners and a little more air. */
@@ -3860,11 +3954,6 @@ select.pqv-input {
   --pqv-fg: #e9d5ff;
 }
 
-/* Terminal's glow follows the text colour (amber ink: an amber screen). */
-.pqv[data-theme="terminal"][data-ink] {
-  --pqv-glow: color-mix(in srgb, var(--pqv-fg) 30%, transparent);
-}
-
 /* the swatches: an "A" in each colour, on the theme's background */
 .pqv-ap-ink {
   display: inline-flex;
@@ -3901,4 +3990,95 @@ select.pqv-input {
 .pqv-ap-choice[aria-checked="true"] .pqv-ap-ink {
   border-color: var(--pqv-fg);
   box-shadow: 0 0 0 2px var(--pqv-bg), 0 0 0 3.5px var(--pqv-fg);
+}
+
+/* ---- column list: copy column names as c("a", "b") ------------------------ */
+
+.pqv-pcopy {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--pqv-muted);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.pqv-pcopy:hover,
+.pqv-pcopy:focus-visible {
+  opacity: 1;
+  color: var(--pqv-accent);
+  background: var(--pqv-hover);
+}
+
+.pqv-pcopy:focus-visible {
+  outline: 2px solid var(--pqv-accent);
+  outline-offset: 1px;
+}
+
+.pqv-pcopy:disabled {
+  opacity: 0.25;
+  cursor: default;
+  background: transparent;
+}
+
+.pqv-pcopy svg {
+  display: block;
+}
+
+/* ---- controls at the bottom (Appearance > Controls) ----------------------- */
+/* Same elements, reordered: the table first, then the WHERE bar, the query,
+   Counts, the toolbar and the title band, with the tabs still last. */
+
+.pqv[data-controls="bottom"] > .pqv-body { order: 1; }
+.pqv[data-controls="bottom"] > .pqv-querybar { order: 2; }
+.pqv[data-controls="bottom"] > .pqv-full { order: 3; }
+.pqv[data-controls="bottom"] > .pqv-counts { order: 4; }
+.pqv[data-controls="bottom"] > .pqv-toolbar { order: 5; }
+.pqv[data-controls="bottom"] > .pqv-header { order: 6; }
+.pqv[data-controls="bottom"] > .pqv-tabs { order: 7; }
+
+/* each band is now divided from what is above it */
+.pqv[data-controls="bottom"] > .pqv-querybar,
+.pqv[data-controls="bottom"] > .pqv-full,
+.pqv[data-controls="bottom"] > .pqv-counts,
+.pqv[data-controls="bottom"] > .pqv-toolbar {
+  border-top: 1px solid var(--pqv-line);
+  border-bottom: 0;
+}
+
+.pqv[data-controls="bottom"] > .pqv-header {
+  border-top: 1px solid var(--pqv-line);
+}
+
+.pqv[data-controls="bottom"] .pqv-header + .pqv-toolbar {
+  border-top: 1px solid var(--pqv-line);
+}
+
+/* a page of its own: the room at the top goes above the table */
+.pqv.pqv-standalone[data-controls="bottom"] .pqv-header {
+  padding-top: 6px;
+}
+
+.pqv.pqv-standalone[data-controls="bottom"] > .pqv-body {
+  margin-top: var(--pqv-top, 0px);
+}
+
+/* Starship: the elbow bends up from the bottom instead */
+.pqv[data-theme="starship"][data-controls="bottom"] > .pqv-header {
+  border-top: 0;
+  border-bottom: 7px solid var(--pqv-ss-orange);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 26px;
+}
+
+.pqv[data-theme="starship"][data-controls="bottom"] > .pqv-toolbar {
+  border-top: 1px solid var(--pqv-line);
+  border-bottom: 3px solid var(--pqv-bg);
 }

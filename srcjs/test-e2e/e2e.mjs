@@ -113,6 +113,9 @@ check('columns listed in picker', await page.locator('.pqv-pitem').count(), 30)
 check('columns shown by default', await page.locator('.pqv-hcell[data-name]').count(), 10)
 check('no view is current at the start', await page.locator('.pqv-toolbar .pqv-viewsbtn').innerText(), 'Views')
 check('rows in DOM are virtualised (< 80)', (await page.locator('.pqv-pinrows .pqv-row').count()) < 80, true)
+check('the WHERE bar starts closed', await page.locator('.pqv-querybar').isVisible(), false)
+await toggleBtn('WHERE').click()
+check('the WHERE button opens it', await page.locator('.pqv-querybar').isVisible(), true)
 
 // ---- standalone top offset ------------------------------------------------
 const toolbarTop = await page.locator('.pqv-toolbar').evaluate((e) => e.getBoundingClientRect().top)
@@ -944,6 +947,7 @@ check('while open, clicking a row shows it', await dvalue('region'), 'West')
 check('row panel follows the filtered rows', await dpanel.locator('.pqv-detail-where').innerText(), `1 of ${expected.region_exact_west.toLocaleString('en-US')} shown`)
 await page.keyboard.press('Escape')
 check('Escape closes the row panel', await dpanel.isVisible(), false)
+await settle()
 check('no row highlighted after closing', await page.locator('.pqv-row.pqv-current').count(), 0)
 await rowNum(0).click()
 await rowNum(0).click()
@@ -1026,15 +1030,16 @@ await clear()
 await step()
 // Undo until the format is gone: how many steps that takes depends on whether
 // the format and the filter were recorded together (timing).
-for (let k = 0; k < 4 && await page.evaluate(() => document.querySelector('.pqv').pqview.state.formats.has('income')); k++) {
+let undos = 0
+for (; undos < 4 && await page.evaluate(() => document.querySelector('.pqv').pqview.state.formats.has('income')); undos++) {
   await undoBtn.click()
   await settle()
 }
 check('undo removes the format', (await firstRow())[incomeIdx], incomeBefore)
-await redoBtn.click()
-await settle()
-await redoBtn.click()
-await settle()
+for (let k = 0; k < undos; k++) {
+  await redoBtn.click()
+  await settle()
+}
 check('redo brings it back', (await firstRow())[incomeIdx], want)
 await clear()
 
@@ -1088,10 +1093,20 @@ await pickLook('Theme', 'auto')
 await pickLook('Font', 'mono')
 await page.keyboard.press('Escape')
 
-// query bar can be hidden with the WHERE switch
+// query bar can be hidden with the WHERE switch, and stays as it was left
 await toggleBtn('WHERE').click()
 check('query bar hidden', await page.locator('.pqv-querybar').isVisible(), false)
+if (storage) {
+  await page.reload()
+  await ready(page)
+  check('a closed WHERE bar stays closed after reload', await page.locator('.pqv-querybar').isVisible(), false)
+}
 await toggleBtn('WHERE').click()
+if (storage) {
+  await page.reload()
+  await ready(page)
+  check('an open WHERE bar stays open after reload', await page.locator('.pqv-querybar').isVisible(), true)
+}
 
 // ---- scrolling ----------------------------------------------------------
 const scroll = await page.evaluate(() => {
@@ -1199,7 +1214,7 @@ check('focus moves to the chosen theme', await page.evaluate(() => document.acti
   const bBox = await box(lookBtn)
   check('Appearance window sits below its button', pBox.y >= bBox.y + bBox.height, true)
 }
-for (const theme of ['classic', 'modern', 'dark', 'vintage', 'terminal', 'auto']) {
+for (const theme of ['classic', 'modern', 'dark', 'vintage', 'starship', 'auto']) {
   await pickLook('Theme', theme)
   check(`preset ${theme} sets data-theme`, await pqv.getAttribute('data-theme'), theme)
 }
@@ -1208,12 +1223,20 @@ check('one preset checked', await lookPanel.locator('.pqv-ap-themes [aria-checke
 await lookPanel.locator('.pqv-ap-themes [aria-checked="true"]').focus()
 await page.keyboard.press('ArrowRight')
 check('arrow key picks the next theme', await pqv.getAttribute('data-theme'), 'classic')
-await pickLook('Theme', 'terminal')
-const toolbarFont = await page.locator('.pqv-toolbar > .pqv-btn').first().evaluate((e) => getComputedStyle(e).fontFamily)
-check('Terminal: toolbar in monospace', /mono|Menlo|Consolas/i.test(toolbarFont), true)
-check('Terminal: font setting disabled', await lookPanel.locator('.pqv-ap-group[aria-label="Font"] .pqv-ap-choice').first().isDisabled(), true)
-check('Terminal: monospace note shown', await lookPanel.locator('.pqv-ap-note').isVisible(), true)
-if (shots) await page.screenshot({ path: `${shots}/${engine}-06-terminal.png` })
+await pickLook('Theme', 'starship')
+{
+  const st = await page.locator('.pqv-toolbar > .pqv-btn').first().evaluate((e) => {
+    const c = getComputedStyle(e)
+    return { font: c.fontFamily, caps: c.textTransform, round: parseFloat(c.borderTopLeftRadius), bg: c.backgroundColor }
+  })
+  check('Starship: condensed capitals on the controls', /Narrow|Antonio|Condensed/i.test(st.font) && st.caps === 'uppercase', true)
+  check('Starship: pill buttons in lilac', st.round >= 12 && st.bg === 'rgb(204, 153, 204)', true)
+  check('Starship: the elbow on the title band', await page.locator('.pqv-header').evaluate((e) => parseFloat(getComputedStyle(e).borderLeftWidth) >= 12), true)
+  check('Starship: the table keeps the chosen font', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), true)
+  check('Starship: the font setting stays enabled', await lookPanel.locator('.pqv-ap-group[aria-label="Font"] .pqv-ap-choice').first().isDisabled(), false)
+  check('Starship: counted as a dark theme', await pqv.evaluate((e) => e.classList.contains('pqv-dark')), true)
+}
+if (shots) await page.screenshot({ path: `${shots}/${engine}-06-starship.png` })
 await pickLook('Accent colour', 'pink')
 check('accent colour applied', await pqv.getAttribute('data-accent'), 'pink')
 const pinkDark = await pqv.evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim())
@@ -1925,6 +1948,19 @@ await phone.close()
   check('? opens the shortcut sheet', await p.locator('.pqv-keys').isVisible(), true)
   await p.keyboard.press('Escape')
   check('Esc closes it', await p.locator('.pqv-keys').count(), 0)
+  const helpBtn = p.locator('.pqv-header .pqv-pref-help')
+  check('a ? button in the top band', await helpBtn.getAttribute('aria-label'), 'Keyboard shortcuts')
+  await helpBtn.click()
+  check('the ? button opens the shortcut sheet', await p.locator('.pqv-keys').isVisible(), true)
+  check('  and is marked expanded', await helpBtn.getAttribute('aria-expanded'), 'true')
+  {
+    const sb = await p.locator('.pqv-keys').boundingBox()
+    const bb = await helpBtn.boundingBox()
+    check('  the sheet opens under it', sb.y >= bb.y + bb.height - 1, true)
+  }
+  await helpBtn.click()
+  check('a second click closes it', await p.locator('.pqv-keys').count(), 0)
+  check('  and is marked collapsed', await helpBtn.getAttribute('aria-expanded'), 'false')
   await p.keyboard.press('g')
   await p.locator('.pqv-goto input').fill('500')
   await p.keyboard.press('Enter')
@@ -2152,9 +2188,9 @@ await phone.close()
   check('text colour and accent are separate choices', [await cellColor(), await p.locator('.pqv').evaluate((e) => getComputedStyle(e).getPropertyValue('--pqv-accent').trim())].join(' '), 'rgb(30, 58, 138) #2b7a3a')
   await pick('Theme', 'dark')
   check('text colour: a light shade on a dark theme', await cellColor(), 'rgb(191, 219, 254)')
-  await pick('Theme', 'terminal')
+  await pick('Theme', 'starship')
   await pick('Text colour', 'amber')
-  check('text colour: amber on Terminal', await cellColor(), 'rgb(255, 176, 46)')
+  check('text colour: amber on Starship', await cellColor(), 'rgb(255, 176, 46)')
   if (storage) {
     await p.reload()
     await ready(p)
@@ -2199,6 +2235,112 @@ await phone.close()
     return Math.abs(s.top - c.top) < 6 && c.right <= window.innerWidth
   })
   check('narrow: Clear filters on the search row', row, true)
+  await ctx.close()
+}
+
+// ---- copy column names as c("a", "b") -------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  if (engine === 'chromium') await ctx.grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {})
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  // record what is copied, in any browser
+  await p.evaluate(() => {
+    window.__copied = []
+    if (navigator.clipboard) navigator.clipboard.writeText = (t) => { window.__copied.push(t); return Promise.resolve() }
+    const exec = document.execCommand.bind(document)
+    document.execCommand = (cmd, ...rest) => {
+      if (cmd === 'copy') window.__copied.push(document.activeElement && document.activeElement.value)
+      return exec(cmd, ...rest)
+    }
+  })
+  const copied = () => p.evaluate(() => window.__copied.at(-1))
+  if (!(await p.locator('.pqv-picker').isVisible())) {
+    await p.locator('.pqv-toolbar .pqv-btn').first().click() // open the column list
+    await p.waitForTimeout(200)
+  }
+  const shown = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.selected())
+  const rv = (names) => 'c(' + names.map((n) => `"${n}"`).join(', ') + ')'
+  const topCopy = p.locator('.pqv-ptop > .pqv-pactions:not(.pqv-pfound) .pqv-pcopy')
+  check('copy button beside the selected count', await topCopy.count(), 1)
+  check('  labelled with its count', await topCopy.getAttribute('aria-label'), `Copy the ${shown.length} column names in the table, in table order as c("…")`)
+  await topCopy.click()
+  await p.waitForTimeout(150)
+  check('  copies every column in the table as c(...)', await copied(), rv(shown))
+  check('  and says so', await p.locator('.pqv-selinfo').innerText().catch(() => ''), `Copied ${shown.length} column names`)
+  // a search: the In table heading copies the matching columns in the table,
+  // the search strip copies every match
+  await p.locator('.pqv-ptop .pqv-input').fill('inc')
+  await p.waitForTimeout(150)
+  const found = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.foundNames())
+  const inTable = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.groupTargets().inTable)
+  check('the search finds columns', found.length > 0, true)
+  await p.locator('.pqv-pgroup .pqv-pcopy').first().click()
+  await p.waitForTimeout(150)
+  check('In table copy: the matching columns in the table', await copied(), rv(inTable))
+  await p.locator('.pqv-pfound .pqv-pcopy').click()
+  await p.waitForTimeout(150)
+  check('search strip copy: every matching column', await copied(), rv(found))
+  await ctx.close()
+}
+
+// ---- controls at the bottom ----------------------------------------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const look = p.locator('.pqv-header .pqv-pref-look')
+  await look.click()
+  await p.locator('.pqv-appearance .pqv-ap-group[aria-label="Controls"] .pqv-ap-choice[data-value="bottom"]').click()
+  await p.waitForTimeout(250)
+  check('Controls: bottom is set', await p.locator('.pqv').getAttribute('data-controls'), 'bottom')
+  const r = (s) => p.locator(s).first().boundingBox()
+  const grid = await r('.pqv-gridwrap')
+  const tb = await r('.pqv-toolbar')
+  const head = await r('.pqv-header')
+  check('the toolbar sits below the table', tb.y >= grid.y + grid.height - 1, true)
+  check('the title band sits below the toolbar', head.y >= tb.y + tb.height - 1, true)
+  check('the table starts near the top', grid.y < 40, true)
+  {
+    const pb = await r('.pqv-appearance')
+    const lb = await look.boundingBox()
+    check('the Appearance window follows its button and opens above it', pb.y + pb.height <= lb.y + 1 && pb.y >= 0, true)
+  }
+  await p.keyboard.press('Escape')
+  await p.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).click()
+  {
+    const pb = await r('.pqv-exportmenu')
+    const eb = await p.locator('.pqv-toolbar .pqv-btn', { hasText: 'Export' }).boundingBox()
+    check('Export opens above its button', pb.y + pb.height <= eb.y + 1 && pb.y >= 0, true)
+  }
+  await p.keyboard.press('Escape')
+  await p.locator('.pqv-toolbar .pqv-viewsbtn').click()
+  {
+    const pb = await r('.pqv-pop')
+    const vb = await p.locator('.pqv-toolbar .pqv-viewsbtn').boundingBox()
+    check('Views opens above its button', pb.y + pb.height <= vb.y + 1 && pb.y >= 0, true)
+  }
+  await p.keyboard.press('Escape')
+  if (shots) await p.screenshot({ path: `${shots}/${engine}-30-controls-bottom.png` })
+  await p.reload()
+  await ready(p)
+  const storageOk = await p.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
+  if (storageOk) check('Controls: bottom is remembered', await p.locator('.pqv').getAttribute('data-controls'), 'bottom')
+  // an old Terminal choice opens as Starship
+  if (storageOk) {
+    await p.evaluate(() => localStorage.setItem('pqview.theme', 'terminal'))
+    await p.reload()
+    await ready(p)
+    check('a saved Terminal theme opens as Starship', await p.locator('.pqv').getAttribute('data-theme'), 'starship')
+    if (shots) await p.screenshot({ path: `${shots}/${engine}-31-starship-bottom.png` })
+  }
+  await p.locator('.pqv-header .pqv-pref-look').click()
+  await p.locator('.pqv-appearance .pqv-link', { hasText: 'Reset to defaults' }).click()
+  check('reset puts the controls back on top', await p.locator('.pqv').getAttribute('data-controls'), 'top')
   await ctx.close()
 }
 

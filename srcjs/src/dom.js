@@ -1,5 +1,7 @@
 // Tiny DOM helpers.
 
+export const COPY_ICON = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="5" width="8.5" height="8.5" rx="1.5"/><path d="M10.5 5V3.5A1.5 1.5 0 0 0 9 2H3.5A1.5 1.5 0 0 0 2 3.5V9a1.5 1.5 0 0 0 1.5 1.5H5"/></svg>'
+
 export function h(tag, attrs, ...children) {
   const el = document.createElement(tag)
   if (attrs) {

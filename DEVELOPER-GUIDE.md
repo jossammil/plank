@@ -130,7 +130,7 @@ Generated files you should never edit by hand: `NAMESPACE`, `man/*.Rd`,
    |---|---|
    | `data` | base64 of the parquet bytes (or of the ciphertext) |
    | `meta` | per-column hints: `{ name: { class, levels, tz, label } }` |
-   | `digits`, `theme`, `font`, `minimal`, `top_offset` | display options |
+   | `digits`, `theme`, `font`, `controls`, `minimal`, `top_offset` | display options |
    | `title`, `notes`, `columns`, `where`, `sort`, `pin`, `formats`, `counts`, `views` | starting state |
    | `enc` | only for password files: `{ v, kdf, iter, salt, iv, mac }` |
 
@@ -265,7 +265,7 @@ the same function (`datasetFromColumns` in `load.js`).
 | `detail.js` | The row panel |
 | `markers.js` | Marker columns (Mark) and how they are saved |
 | `views.js` | Saved views: build, compare, store, R code |
-| `appearance.js` | Themes, accent and text colours, font, size, spacing; the Appearance window |
+| `appearance.js` | Themes, accent and text colours, font, size, spacing, controls top/bottom; the Appearance window |
 | `keys.js` | Shortcut table, help sheet, "is the user typing?" |
 | `palette.js` | The Ctrl/Cmd+K command palette and its fuzzy matching |
 | `dom.js` | `h()` element helper, `debounce`, `idle` |
@@ -296,7 +296,7 @@ the same function (`datasetFromColumns` in `load.js`).
   (`takeSnapshot` / `stepHistory`).
 - `localStorage` keys, all prefixed `pqview.`:
   - display preferences, shared by every viewer: `theme`, `accent`, `ink`,
-    `font`, `size`, `density`, `minimal`, `query`, `fullQuery`,
+    `font`, `size`, `density`, `controls`, `minimal`, `query`, `fullQuery`,
     `pickerWidth`, `countsHeight`, `detailWidth`, `naText`, `naCustom`,
     `searchRegex`
   - per data set (keyed by a **fingerprint** of the data, `markers.js`):
@@ -312,6 +312,12 @@ the same function (`datasetFromColumns` in `load.js`).
   `data-accent`, `data-ink`, `data-font`, ...) and the CSS does the rest.
   Later rules win over earlier ones of the same strength, so accent and
   text colour rules sit after the theme blocks.
+- Themes: Auto, Classic, Modern, Dark, Vintage, Starship. Old saved names
+  are mapped in `normalizeTheme` (`light` to Classic, `terminal` to
+  Starship); R does the same for `theme =`.
+- Controls at the bottom (`data-controls="bottom"`) reorder the root's
+  children with CSS `order` only; the DOM order never changes. Popovers
+  flip above their button in `Grid.openPop` when there is more room there.
 - The narrow layout uses **container queries** (`@container pqv
   (max-width: 560px)`), so it follows the widget's width, not the window's.
 - The file is in sections with `/* ---- name ---- */` headers; newer

@@ -226,13 +226,24 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   them from R.
 - **Appearance.** The faint palette button at the right of the top band
   opens a small window with themes (Auto, which follows the system's light or
-  dark setting, Classic, Modern, Dark, Vintage and Terminal, green on black
-  in monospace) and individual settings: accent colour, text colour (dark
-  shades on light themes, light shades on dark ones; amber on Terminal makes
-  an amber screen), table font (mono, sans or serif), text size and row
-  spacing. Each reader's choices are
-  remembered in their browser; `theme =` and `font =` set the starting look
-  from R.
+  dark setting, Classic, Modern, Dark, Vintage and Starship, a starship
+  console in black with rounded orange and lilac panels) and individual
+  settings: accent colour, text colour (dark shades on light themes, light
+  shades on dark ones), table font (mono, sans or serif), text size, row
+  spacing and **Controls**: at the top, or at the bottom below the table
+  (popovers then open upwards). Each reader's choices are remembered in
+  their browser; `theme =`, `font =` and `controls =` set the starting look
+  from R. (`theme = "terminal"`, from earlier versions, now gives Starship.)
+- **Keyboard help.** The faint `?` button beside it lists every keyboard
+  shortcut (the `?` key does the same).
+- **Copy column names.** Faint copy buttons in the column list copy names
+  as R code, `c("age", "income")`: beside the selected count (every column
+  in the table, in table order), on the In table heading (those in the
+  table, or just the ones a search found) and on the search results strip
+  (every column the search found).
+- **WHERE bar.** It starts closed. Once a reader opens it or types a
+  condition, it stays open for them next time; a file saved with `where =`
+  always opens with it showing.
 - **Minimal view.** The button in the table's top-left corner (or `M`)
   folds away the top band, toolbar, WHERE bar, Counts and the column list,
   leaving the table and its column filters: a full spreadsheet view. The

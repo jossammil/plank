@@ -67,13 +67,20 @@ test_that("query, font, theme and offset options reach the browser", {
 })
 
 test_that("every theme and font is accepted", {
-  for (theme in c("auto", "classic", "modern", "dark", "vintage", "terminal", "light")) {
+  for (theme in c("auto", "classic", "modern", "dark", "vintage", "starship")) {
     expect_identical(pqview(iris, theme = theme)$x$theme, theme)
   }
+  # old names
+  expect_identical(pqview(iris, theme = "terminal")$x$theme, "starship")
+  expect_identical(pqview(iris, theme = "light")$x$theme, "classic")
   for (font in c("mono", "sans", "serif")) {
     expect_identical(pqview(iris, font = font)$x$font, font)
   }
   expect_error(pqview(iris, theme = "sepia"))
+  expect_identical(pqview(iris)$x$controls, "top")
+  expect_identical(pqview(iris, controls = "bottom")$x$controls, "bottom")
+  expect_identical(pqview(NULL, controls = "bottom")$x$controls, "bottom")
+  expect_error(pqview(iris, controls = "left"))
   expect_error(pqview(iris, font = "cursive"))
 })
 
