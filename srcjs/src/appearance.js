@@ -1,5 +1,5 @@
 // Appearance: colour theme, accent colour, text colour, table font, text
-// size, row spacing and where the controls sit. The colours themselves live in pqview.css as token blocks; this
+// size, row spacing and where the controls sit. The colours themselves live in plank.css as token blocks; this
 // module only picks which block applies and builds the settings window.
 
 import { h } from './dom.js'
@@ -25,7 +25,18 @@ export const FONTS = [['mono', 'Mono'], ['sans', 'Sans'], ['serif', 'Serif']]
 export const SIZES = [['small', 'Small'], ['normal', 'Normal'], ['large', 'Large']]
 export const DENSITIES = [['compact', 'Compact'], ['normal', 'Normal'], ['roomy', 'Roomy']]
 export const PLACES = [['top', 'Top'], ['bottom', 'Bottom']]
-export const APPEARANCE_KEYS = ['theme', 'accent', 'ink', 'font', 'size', 'density', 'controls']
+// Fine-tuning ("More options"): 'theme' means whatever the theme does.
+export const DECORS = [['theme', 'Theme', "The theme's own"], ['on', 'On', 'Coloured bands and filled buttons'], ['off', 'Off', 'Plain controls']]
+export const SHAPES = [['theme', 'Theme', "The theme's own"], ['square', 'Square'], ['rounded', 'Rounded'], ['pill', 'Pill']]
+export const UIFONTS = [['theme', 'Theme', "The theme's own"], ['sans', 'Sans'], ['condensed', 'Condensed', 'Narrow capitals'], ['mono', 'Mono'], ['serif', 'Serif']]
+export const CONTRASTS = [['soft', 'Soft', 'Fainter lines'], ['normal', 'Normal'], ['high', 'High', 'Stronger lines and labels']]
+export const APPEARANCE_KEYS = ['theme', 'accent', 'ink', 'font', 'size', 'density', 'controls', 'decor', 'shape', 'uifont', 'contrast']
+
+// What 'theme' means for each fine-tuning setting, per theme. Anything not
+// listed: no decor, and the theme's own shapes and controls font.
+const THEME_LOOK = {
+  starship: { decor: 'on', shape: 'pill', uifont: 'condensed' },
+}
 
 const ROW_H = { compact: 22, normal: 26, roomy: 32 }
 
@@ -57,6 +68,28 @@ export function readAppearance(load, x = {}) {
     size: pick(SIZES, load('size')) || 'normal',
     density: pick(DENSITIES, load('density')) || 'normal',
     controls: pick(PLACES, load('controls')) || pick(PLACES, x.controls) || 'top',
+    decor: pick(DECORS, load('decor')) || 'theme',
+    shape: pick(SHAPES, load('shape')) || 'theme',
+    uifont: pick(UIFONTS, load('uifont')) || 'theme',
+    contrast: pick(CONTRASTS, load('contrast')) || 'normal',
+  }
+}
+
+/**
+ * The fine-tuning settings with 'theme' replaced by the theme's own choice.
+ * shape and uifont are null when the theme's CSS decides.
+ */
+export function resolveLook(a) {
+  const own = THEME_LOOK[a.theme] || {}
+  const choose = (key, list, fallback) => {
+    const v = pick(list, a[key])
+    return !v || v === 'theme' ? (own[key] || fallback) : v
+  }
+  return {
+    decor: choose('decor', DECORS, 'off'),
+    shape: choose('shape', SHAPES, null),
+    uifont: choose('uifont', UIFONTS, null),
+    contrast: pick(CONTRASTS, a.contrast) || 'normal',
   }
 }
 
@@ -82,9 +115,39 @@ export function applyAppearance(el, a, systemDark) {
   el.dataset.size = a.size
   el.dataset.density = a.density
   el.dataset.controls = a.controls || 'top'
+  const fine = resolveLook(a)
+  el.dataset.decor = fine.decor
+  el.dataset.contrast = fine.contrast
+  if (fine.shape) el.dataset.shape = fine.shape
+  else delete el.dataset.shape
+  if (fine.uifont) el.dataset.uifont = fine.uifont
+  else delete el.dataset.uifont
   el.classList.toggle('pqv-mono', font === 'mono')
   el.classList.toggle('pqv-dark', isDarkTheme(a.theme, systemDark))
   el.style.setProperty('--pqv-row-h', rowHeight(a) + 'px')
+  applyContrast(el, fine.contrast)
+}
+
+// Contrast mixes the theme's line and muted colours toward the background
+// (soft) or the text (high). A CSS variable cannot be mixed from its own
+// value, so the theme's colours are read first and the mix set inline.
+const CONTRAST_MIX = {
+  soft: { to: '--pqv-bg', '--pqv-line': 45, '--pqv-line-strong': 40, '--pqv-muted': 25 },
+  high: { to: '--pqv-fg', '--pqv-line': 40, '--pqv-line-strong': 40, '--pqv-muted': 45 },
+}
+
+function applyContrast(el, contrast) {
+  const keys = ['--pqv-line', '--pqv-line-strong', '--pqv-muted']
+  for (const k of keys) el.style.removeProperty(k)
+  const mix = CONTRAST_MIX[contrast]
+  if (!mix || typeof getComputedStyle !== 'function') return
+  const cs = getComputedStyle(el)
+  const to = cs.getPropertyValue(mix.to).trim()
+  if (!to) return
+  for (const k of keys) {
+    const v = cs.getPropertyValue(k).trim()
+    if (v) el.style.setProperty(k, `color-mix(in srgb, ${v} ${100 - mix[k]}%, ${to})`)
+  }
 }
 
 // A row of choices that behaves as one radio group: Tab reaches the chosen
@@ -126,6 +189,8 @@ function radioGroup(label, options, cls, render, onPick) {
   return { el: group, sync, checked: () => buttons.find((b) => b.tabIndex === 0) }
 }
 
+let moreOpen = false
+
 function themePreview(value) {
   const sample = (theme) => h('span', { class: 'pqv-ap-preview', 'data-theme': theme },
     h('span', { class: 'pqv-ap-pv-text', text: 'Aa' }),
@@ -159,8 +224,21 @@ export function appearancePanel({ get, set, reset }) {
   const size = seg('Text size', SIZES, 'size')
   const density = seg('Row spacing', DENSITIES, 'density')
   const controls = seg('Controls', PLACES, 'controls')
+  const decor = seg('Decor', DECORS, 'decor')
+  const shape = seg('Shapes', SHAPES, 'shape')
+  const uifont = seg('Controls font', UIFONTS, 'uifont')
+  const contrast = seg('Contrast', CONTRASTS, 'contrast')
   const row = (label, control, extra) => h('div', { class: 'pqv-ap-row' },
     h('span', { class: 'pqv-ap-k', text: label }), control.el, extra)
+  // Starts folded; stays open while the page is (not saved).
+  const more = h('details', { class: 'pqv-ap-more' },
+    h('summary', { class: 'pqv-ap-more-sum', text: 'More options' }),
+    row('Decor', decor),
+    row('Shapes', shape),
+    row('Controls font', uifont),
+    row('Contrast', contrast))
+  more.open = moreOpen
+  more.addEventListener('toggle', () => { moreOpen = more.open })
 
   const el = h('div', { class: 'pqv-pop pqv-appearance', role: 'dialog', 'aria-label': 'Appearance' },
     h('div', { class: 'pqv-pop-title', text: 'Appearance' }),
@@ -173,7 +251,8 @@ export function appearancePanel({ get, set, reset }) {
       row('Font', font),
       row('Text size', size),
       row('Row spacing', density),
-      row('Controls', controls)),
+      row('Controls', controls),
+      more),
     h('div', { class: 'pqv-pop-foot pqv-ap-foot' },
       h('button', { class: 'pqv-link', type: 'button', text: 'Reset to defaults', onclick: () => reset() })))
 
@@ -186,6 +265,10 @@ export function appearancePanel({ get, set, reset }) {
     size.sync(a.size)
     density.sync(a.density)
     controls.sync(a.controls || 'top')
+    decor.sync(a.decor || 'theme')
+    shape.sync(a.shape || 'theme')
+    uifont.sync(a.uifont || 'theme')
+    contrast.sync(a.contrast || 'normal')
   }
   sync()
   return { el, sync, focusTarget: () => theme.checked() }

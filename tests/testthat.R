@@ -1,4 +1,4 @@
 library(testthat)
-library(pqview)
+library(plank)
 
-test_check("pqview")
+test_check("plank")

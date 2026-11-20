@@ -124,7 +124,7 @@ function numericRank(values) {
  *
  * Returns { col, bin, ids: Int32Array (-1 = missing), k, label(id), rank: Float64Array,
  *   cond(id), notCond(id) } where cond and notCond are WHERE conditions in
- * pqview's query syntax that select (or leave out) the group's rows.
+ * plank's query syntax that select (or leave out) the group's rows.
  * Keys for parquet columns are cached on the column; marker columns change,
  * so theirs are built each time (they are cheap).
  */

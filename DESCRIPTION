@@ -1,6 +1,6 @@
-Package: pqview
+Package: plank
 Title: Fast, Serverless Data Frame Viewer in a Single HTML File
-Version: 0.13.0
+Version: 0.14.0
 Authors@R: c(
     person("Joseph", "Miller", role = c("aut", "cre"), email = "jossammil@gmail.com"),
     person("Hyperparam", role = c("ctb", "cph"),
@@ -16,8 +16,8 @@ Description: Browse a data frame or parquet file in the browser without a
     global search, summary statistics, grouped counts, saved views and
     export to CSV, Excel, R data and parquet.
 License: MIT + file LICENSE
-URL: https://github.com/jossammil/pqview
-BugReports: https://github.com/jossammil/pqview/issues
+URL: https://jossammil.github.io/plank/
+BugReports: https://github.com/jossammil/plank-app/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2

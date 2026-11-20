@@ -1,0 +1,36 @@
+{
+  "r": {
+    "measured": "2026-11-20",
+    "machine": "Darwin arm64 R 4.5.0",
+    "rows": 100000,
+    "cols": 30,
+    "xlsx": {
+      "mb": 17.21,
+      "write_s": 7.57
+    },
+    "plank": {
+      "mb": 8.14,
+      "write_s": 0.46
+    },
+    "zip": {
+      "mb": 5.78,
+      "write_s": 0.81
+    },
+    "locked": {
+      "mb": 8.14,
+      "write_s": 5.46
+    },
+    "csv_mb": 19.89,
+    "parquet_mb": 8.39
+  },
+  "open": {
+    "measured": "2026-11-20",
+    "browser": "Chrome",
+    "page_s": 0.26,
+    "viewer_s": {
+      "parquet": 0.22,
+      "csv": 0.82,
+      "xlsx": 2.51
+    }
+  }
+}

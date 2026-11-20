@@ -6,15 +6,15 @@ const result = await build({
   bundle: true,
   minify: true,
   format: 'iife',
-  globalName: 'PQView',
+  globalName: 'Plank',
   platform: 'browser',
   target: ['es2020'],
   legalComments: 'none',
   banner: {
-    js: '/*! pqview viewer. Bundles hyparquet and hyparquet-writer (MIT, (c) Hyperparam) and ' +
-      'fflate and fzstd (MIT, (c) Arjun Barrett); see the COPYRIGHTS file of the pqview R package. */',
+    js: '/*! Plank viewer. Bundles hyparquet and hyparquet-writer (MIT, (c) Hyperparam) and ' +
+      'fflate and fzstd (MIT, (c) Arjun Barrett); see the COPYRIGHTS file of the plank R package. */',
   },
-  outfile: '../inst/htmlwidgets/lib/pqview/pqview-core.js',
+  outfile: '../inst/htmlwidgets/lib/plank/plank-core.js',
   metafile: true,
 })
 const [file, info] = Object.entries(result.metafile.outputs)[0]

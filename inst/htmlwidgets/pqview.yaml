@@ -1,6 +1,0 @@
-dependencies:
-  - name: pqview-core
-    version: 0.13.0
-    src: htmlwidgets/lib/pqview
-    script: pqview-core.js
-    stylesheet: pqview.css

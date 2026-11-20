@@ -1,16 +1,16 @@
-test_that("save_pqview() writes one self-contained file", {
-  dir <- tempfile("pqview-save")
+test_that("save_plank() writes one self-contained file", {
+  dir <- tempfile("plank-save")
   dir.create(dir)
   on.exit(unlink(dir, recursive = TRUE))
   file <- file.path(dir, "cars.html")
 
-  out <- save_pqview(mtcars, file, title = "Cars & trucks")
+  out <- save_plank(mtcars, file, title = "Cars & trucks")
   expect_identical(out, file)
   expect_identical(list.files(dir), "cars.html")
 
   html <- readChar(file, file.size(file), useBytes = TRUE)
   expect_match(html, "<title>Cars &amp; trucks</title>", fixed = TRUE)
-  expect_match(html, "PQView", fixed = TRUE)
+  expect_match(html, "Plank", fixed = TRUE)
   expect_match(html, "HTMLWidgets", fixed = TRUE)
   expect_match(html, ".pqv-toolbar", fixed = TRUE)
   expect_match(html, "application/json", fixed = TRUE)
@@ -21,10 +21,10 @@ test_that("save_pqview() writes one self-contained file", {
   expect_false(grepl("<link[^>]*\\shref\\s*=", html, perl = TRUE))
 })
 
-test_that("save_pqview() accepts an existing widget and names the tab", {
+test_that("save_plank() accepts an existing widget and names the tab", {
   file <- tempfile(fileext = ".html")
   on.exit(unlink(file))
-  save_pqview(pqview(iris), file)
+  save_plank(plank(iris), file)
   html <- readChar(file, file.size(file), useBytes = TRUE)
   expect_match(html, paste0("<title>", tools::file_path_sans_ext(basename(file)), "</title>"), fixed = TRUE)
 })
@@ -39,8 +39,8 @@ test_that("non-ASCII names and values and paths with spaces survive the round tr
   on.exit(unlink(dir, recursive = TRUE))
   file <- file.path(dir, "my data.html")
 
-  w <- pqview(df, title = "Café data")
-  save_pqview(w, file)
+  w <- plank(df, title = "Café data")
+  save_plank(w, file)
   expect_true(file.exists(file))
 
   html <- readLines(file, encoding = "UTF-8", warn = FALSE)
@@ -57,63 +57,64 @@ test_that("non-ASCII names and values and paths with spaces survive the round tr
   expect_identical(w$x$meta[["état"]]$levels, list("hiver", "été"))
 })
 
-test_that("file names follow the .pqv.html convention", {
-  expect_identical(save_paths("a/sales")$html, "a/sales.pqv.html")
+test_that("file names follow the .plank.html convention", {
+  expect_identical(save_paths("a/sales")$html, "a/sales.plank.html")
   expect_identical(save_paths("sales.pqv")$html, "sales.pqv.html")
-  expect_identical(save_paths("sales.pqv.html")$html, "sales.pqv.html")
+  expect_identical(save_paths("sales.plank")$html, "sales.plank.html")
+  expect_identical(save_paths("sales.plank.html")$html, "sales.plank.html")
   expect_identical(save_paths("sales.HTML")$html, "sales.HTML")
-  expect_identical(save_paths("v1.2 data/sales")$html, "v1.2 data/sales.pqv.html")
+  expect_identical(save_paths("v1.2 data/sales")$html, "v1.2 data/sales.plank.html")
   expect_null(save_paths("sales")$zip)
   expect_warning(p <- save_paths("sales.txt"), "does not end in .html")
   expect_identical(p$html, "sales.txt")
 
-  expect_identical(save_paths("sales", zip = TRUE), list(html = "sales.pqv.html", zip = "sales.pqv.zip"))
+  expect_identical(save_paths("sales", zip = TRUE), list(html = "sales.plank.html", zip = "sales.plank.zip"))
   expect_identical(save_paths("sales.html", zip = TRUE)$zip, "sales.zip")
-  expect_identical(save_paths("sales.zip"), list(html = "sales.pqv.html", zip = "sales.zip"))
-  expect_identical(save_paths("sales.pqv.zip"), list(html = "sales.pqv.html", zip = "sales.pqv.zip"))
+  expect_identical(save_paths("sales.zip"), list(html = "sales.plank.html", zip = "sales.zip"))
+  expect_identical(save_paths("sales.plank.zip"), list(html = "sales.plank.html", zip = "sales.plank.zip"))
 })
 
-test_that("save_pqview() adds .pqv.html to a bare name", {
-  dir <- tempfile("pqview-save")
+test_that("save_plank() adds .plank.html to a bare name", {
+  dir <- tempfile("plank-save")
   dir.create(dir)
   on.exit(unlink(dir, recursive = TRUE))
-  out <- save_pqview(mtcars, file.path(dir, "cars"))
-  expect_identical(out, file.path(dir, "cars.pqv.html"))
-  expect_identical(list.files(dir), "cars.pqv.html")
+  out <- save_plank(mtcars, file.path(dir, "cars"))
+  expect_identical(out, file.path(dir, "cars.plank.html"))
+  expect_identical(list.files(dir), "cars.plank.html")
   html <- readChar(out, file.size(out), useBytes = TRUE)
   expect_match(html, "<title>cars</title>", fixed = TRUE)
 })
 
-test_that("save_pqview(zip = TRUE) writes a zip archive holding the HTML file", {
-  dir <- tempfile("pqview save é")
+test_that("save_plank(zip = TRUE) writes a zip archive holding the HTML file", {
+  dir <- tempfile("plank save é")
   dir.create(dir)
   on.exit(unlink(dir, recursive = TRUE))
-  html <- save_pqview(iris, file.path(dir, "flowers.pqv.html"))
-  out <- save_pqview(iris, file.path(dir, "flowers"), zip = TRUE)
-  expect_identical(out, file.path(dir, "flowers.pqv.zip"))
-  expect_setequal(list.files(dir), c("flowers.pqv.html", "flowers.pqv.zip"))
+  html <- save_plank(iris, file.path(dir, "flowers.plank.html"))
+  out <- save_plank(iris, file.path(dir, "flowers"), zip = TRUE)
+  expect_identical(out, file.path(dir, "flowers.plank.zip"))
+  expect_setequal(list.files(dir), c("flowers.plank.html", "flowers.plank.zip"))
   expect_lt(file.size(out), file.size(html))
 
   # Saving again replaces the archive rather than adding to it
-  save_pqview(iris, file.path(dir, "flowers.pqv.zip"))
+  save_plank(iris, file.path(dir, "flowers.plank.zip"))
   listed <- utils::unzip(out, list = TRUE)
-  expect_identical(listed$Name, "flowers.pqv.html")
+  expect_identical(listed$Name, "flowers.plank.html")
   unzipped <- file.path(dir, "unzipped")
   utils::unzip(out, exdir = unzipped)
   # The same page apart from the widget's random element id
   strip <- function(path) gsub("htmlwidget-[0-9a-f]+", "", readLines(path, encoding = "UTF-8"))
-  expect_identical(strip(file.path(unzipped, "flowers.pqv.html")), strip(html))
+  expect_identical(strip(file.path(unzipped, "flowers.plank.html")), strip(html))
 })
 
 test_that("zip archives can be written without the zip package", {
   skip_if(!nzchar(Sys.getenv("R_ZIPCMD", Sys.which("zip"))), "no zip program")
-  dir <- tempfile("pqview zip é")
+  dir <- tempfile("plank zip é")
   dir.create(dir)
   on.exit(unlink(dir, recursive = TRUE))
-  file <- file.path(dir, "a b.pqv.html")
+  file <- file.path(dir, "a b.plank.html")
   writeLines("hello", file)
-  zipfile <- file.path(dir, "a b.pqv.zip")
+  zipfile <- file.path(dir, "a b.plank.zip")
   zip_one(file, zipfile, use_package = FALSE)
   zip_one(file, zipfile, use_package = FALSE)
-  expect_identical(utils::unzip(zipfile, list = TRUE)$Name, "a b.pqv.html")
+  expect_identical(utils::unzip(zipfile, list = TRUE)$Name, "a b.plank.html")
 })

@@ -29,10 +29,11 @@ jobs:
       - name: Committed bundle matches the sources
         run: |
           npm run build
-          git diff --exit-code -- ../inst/htmlwidgets/lib/pqview/pqview-core.js
+          git diff --exit-code -- ../inst/htmlwidgets/lib/plank/plank-core.js
 
   e2e:
-    runs-on: macos-latest
+    # Ubuntu: private repositories pay 10x minutes for macOS runners.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: r-lib/actions/setup-r@v2
@@ -51,7 +52,7 @@ jobs:
       - working-directory: srcjs
         run: |
           npm ci
-          npx playwright install chromium webkit
+          npx playwright install --with-deps chromium webkit
       - name: Chromium
         working-directory: srcjs
         run: npm run e2e

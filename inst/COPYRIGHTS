@@ -1,5 +1,5 @@
-pqview bundles the following JavaScript libraries into
-inst/htmlwidgets/lib/pqview/pqview-core.js (and so into every page it
+plank bundles the following JavaScript libraries into
+inst/htmlwidgets/lib/plank/plank-core.js (and so into every page it
 writes). Each is distributed under the MIT License, reproduced below.
 
 - hyparquet 1.33.0 (parquet reader), Copyright (c) Hyperparam,

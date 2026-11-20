@@ -6,4 +6,6 @@ srcjs/node_modules/
 *.Rcheck/
 *.tar.gz
 examples/*.html
-!examples/*.pqv.html
+!examples/*.plank.html
+site-dist/
+examples/bench/

@@ -4,13 +4,13 @@
 #' **Views** menu: which columns are shown and in what order, which are
 #' pinned, which rows are kept, how they are sorted, and optionally the
 #' **Counts** panel. Pass a
-#' named list of views to [pqview()]'s `views` argument.
+#' named list of views to [plank()]'s `views` argument.
 #'
 #' In the viewer, **Views** > **Copy as R code** writes this call for the
 #' current state, with the column filters and search turned into `where`.
 #'
 #' @param columns Names of the columns shown, in order. `NULL` shows the same
-#'   columns as the viewer starts with (`pqview(columns = )`, or the first
+#'   columns as the viewer starts with (`plank(columns = )`, or the first
 #'   ten).
 #' @param where A WHERE condition in the viewer's query syntax, such as
 #'   `"age > 30 AND region IN ('West', 'South')"`. It is checked in the
@@ -24,23 +24,23 @@
 #'   panel, which opens when the view is used. `NULL` leaves the panel as it
 #'   is.
 #'
-#' @return A `pqview_view` object.
-#' @seealso [pqview()]
+#' @return A `plank_view` object.
+#' @seealso [plank()]
 #' @examples
 #' if (interactive()) {
-#'   pqview(mtcars,
+#'   plank(mtcars,
 #'     views = list(
-#'       "Fuel-efficient" = pqview_view(
+#'       "Fuel-efficient" = plank_view(
 #'         columns = c("mpg", "cyl", "hp", "wt"),
 #'         where = "mpg > 25",
 #'         sort = "-mpg"
 #'       ),
-#'       "By cylinders" = pqview_view(counts = c("cyl", "gear"))
+#'       "By cylinders" = plank_view(counts = c("cyl", "gear"))
 #'     )
 #'   )
 #' }
 #' @export
-pqview_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL, pin = NULL) {
+plank_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL, pin = NULL) {
   check_names_arg(columns, "columns")
   check_names_arg(pin, "pin")
   check_names_arg(sort, "sort")
@@ -53,13 +53,13 @@ pqview_view <- function(columns = NULL, where = NULL, sort = NULL, counts = NULL
   }
   structure(
     list(columns = columns, where = where, sort = sort, counts = counts, pin = pin),
-    class = "pqview_view"
+    class = "plank_view"
   )
 }
 
 #' @export
-print.pqview_view <- function(x, ...) {
-  cat("<pqview_view>\n")
+print.plank_view <- function(x, ...) {
+  cat("<plank_view>\n")
   show <- function(label, value) {
     if (!is.null(value)) cat(sprintf("  %-8s %s\n", label, paste(value, collapse = ", ")))
   }
@@ -168,23 +168,23 @@ browser_formats <- function(formats, names) {
 # Views as a list the browser reads: list(name, columns, where, sort, pinned, counts).
 browser_views <- function(views, names, default_columns) {
   if (is.null(views)) return(NULL)
-  if (inherits(views, "pqview_view")) {
-    stop("`views` must be a named list of views, such as list(\"Name\" = pqview_view(...)).", call. = FALSE)
+  if (inherits(views, "plank_view")) {
+    stop("`views` must be a named list of views, such as list(\"Name\" = plank_view(...)).", call. = FALSE)
   }
   if (!is.list(views) || !length(views)) {
-    stop("`views` must be a named list of pqview_view() objects.", call. = FALSE)
+    stop("`views` must be a named list of plank_view() objects.", call. = FALSE)
   }
   labels <- names(views)
   if (is.null(labels) || anyNA(labels) || any(!nzchar(trimws(labels)))) {
-    stop("Every element of `views` needs a name, such as list(\"Name\" = pqview_view(...)).", call. = FALSE)
+    stop("Every element of `views` needs a name, such as list(\"Name\" = plank_view(...)).", call. = FALSE)
   }
   if (anyDuplicated(trimws(labels))) {
     stop("View names must be unique: '", labels[anyDuplicated(trimws(labels))], "' is repeated.", call. = FALSE)
   }
   unname(Map(function(label, v) {
-    if (!inherits(v, "pqview_view")) {
-      if (!is.list(v)) stop("View '", label, "' must be made with pqview_view().", call. = FALSE)
-      v <- do.call(pqview_view, v)
+    if (!inherits(v, "plank_view")) {
+      if (!is.list(v)) stop("View '", label, "' must be made with plank_view().", call. = FALSE)
+      v <- do.call(plank_view, v)
     }
     context <- sprintf("view '%s' ", label)
     if (!is.null(v$columns)) check_known(v$columns, names, "columns", context)

@@ -1,95 +1,107 @@
-# pqview
+# Plank
 
-[![R-CMD-check](https://github.com/jossammil/pqview/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/jossammil/pqview/actions/workflows/R-CMD-check.yaml)
-[![js](https://github.com/jossammil/pqview/actions/workflows/js.yaml/badge.svg)](https://github.com/jossammil/pqview/actions/workflows/js.yaml)
+[![R-CMD-check](https://github.com/jossammil/plank-app/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/jossammil/plank-app/actions/workflows/R-CMD-check.yaml)
+[![js](https://github.com/jossammil/plank-app/actions/workflows/js.yaml/badge.svg)](https://github.com/jossammil/plank-app/actions/workflows/js.yaml)
 
-A fast, serverless viewer for data frames and parquet files. `pqview` embeds
+Plank is a data viewer that runs entirely in your browser: no server, no
+install, nothing uploaded. A plank file (`.plank.html`) is one web page with
+the data packed inside, so it can be emailed, shared or opened offline.
+*Frankensteined by MillJS.*
+
+A fast, serverless viewer for data frames and parquet files. Plank embeds
 your data as compressed parquet inside **one HTML file** and reads it in the
 browser, so the result opens by double-click, can be emailed or dropped on a
 shared drive, and needs no R session, server or internet connection.
 
-![pqview showing a filtered 100,000-row table](man/figures/pqview.png)
+![Plank showing a filtered 100,000-row table](man/figures/plank.png)
 
-**[Try it in your browser](https://jossammil.github.io/pqview/)**: a saved
-viewer of 10,000 synthetic rows, about 1 MB. The same file is
-[`examples/sample.pqv.html`](examples/sample.pqv.html); download it (use
-**Download raw file** on that page) and double-click it to open it offline.
-**[Open your own file](https://jossammil.github.io/pqview/viewer.html)**:
-a blank viewer for CSV, TSV, Excel and parquet files, read in your browser
-and never uploaded.
+The public site, **<https://jossammil.github.io/plank/>**, has the about
+text, features, size and speed numbers and keyboard shortcuts, plus:
+
+- **[the Plank demo](https://jossammil.github.io/plank/demo.html)**: 100,000
+  fake records with 30 columns of every type, about 8 MB;
+- **[a blank viewer](https://jossammil.github.io/plank/viewer.html)** for
+  your own CSV, TSV, Excel and parquet files, read in your browser and never
+  uploaded.
+
+The site lives in the public repository
+[jossammil/plank](https://github.com/jossammil/plank); this repository
+(`plank-app`, private) holds the R package and the viewer's source.
 
 ## Install
 
-On any machine with R 4.2 or later (macOS, Windows or Linux):
+On any machine with R 4.2 or later (macOS, Windows or Linux). The
+repository is private, so installing needs a GitHub token that can read it
+(set as `GITHUB_PAT`, for example with `usethis::edit_r_environ()`):
 
 ```r
 install.packages("remotes")
-remotes::install_github("jossammil/pqview")
+remotes::install_github("jossammil/plank-app")
 ```
 
-pqview is pure R plus prebuilt JavaScript, so no Rtools, Xcode or Node is
+Plank is pure R plus prebuilt JavaScript, so no Rtools, Xcode or Node is
 needed to install it.
 
 ## Use
 
 ```r
-library(pqview)
+library(plank)
 
 # In the RStudio viewer or a browser
-pqview(mtcars)
+plank(mtcars)
 
 # From a parquet file, choosing which columns show first
-pqview("big_table.parquet", columns = c("id", "state", "amount"))
+plank("big_table.parquet", columns = c("id", "state", "amount"))
 
-# One portable file, my_data.pqv.html, with a title and a line of notes in the top band
-save_pqview(my_data, "my_data", title = "My data",
+# One portable file, my_data.plank.html, with a title and a line of notes in the top band
+save_plank(my_data, "my_data", title = "My data",
             notes = "Extract of 2024-06-30; one row per visit", open = TRUE)
 
-# The same file in a zip archive, my_data.pqv.zip, to email or upload
-save_pqview(my_data, "my_data", title = "My data", zip = TRUE)
+# The same file in a zip archive, my_data.plank.zip, to email or upload
+save_plank(my_data, "my_data", title = "My data", zip = TRUE)
 
 # A password-protected file (TRUE asks for the password, so it is not in the script)
-save_pqview(my_data, "my_data", title = "My data", password = TRUE)
+save_plank(my_data, "my_data", title = "My data", password = TRUE)
 
 # A blank viewer that opens the reader's own CSV, TSV, Excel and parquet files
-save_pqview(NULL, "viewer.pqv.html")
+save_plank(NULL, "viewer.plank.html")
 
 # Start in the minimal view: just the table
-pqview(mtcars, minimal = TRUE)
+plank(mtcars, minimal = TRUE)
 
 # Start with a query, a proportional font (monospace is the default) and a dark theme
-pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
+plank(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans", theme = "dark")
 
 # Start sorted and pinned, with the Counts panel open, and offer prepared views
-pqview(mtcars, sort = c("cyl", "-mpg"), pin = "rowname", counts = "cyl",
+plank(mtcars, sort = c("cyl", "-mpg"), pin = "rowname", counts = "cyl",
        views = list(
-         "Fuel-efficient" = pqview_view(columns = c("mpg", "cyl", "hp", "wt"),
+         "Fuel-efficient" = plank_view(columns = c("mpg", "cyl", "hp", "wt"),
                                         where = "mpg > 25", sort = "-mpg"),
-         "By cylinders and gears" = pqview_view(counts = c("cyl", "gear"))
+         "By cylinders and gears" = plank_view(counts = c("cyl", "gear"))
        ))
 ```
 
-Saved files are named `name.pqv.html`: the `.html` ending opens them in a
-browser on any computer, and the `.pqv` before it lets you find them all by
-searching for `.pqv.html`. A name without an extension gets `.pqv.html`
+Saved files are named `name.plank.html`: the `.html` ending opens them in a
+browser on any computer, and the `.plank` before it lets you find them all by
+searching for `.plank.html`. A name without an extension gets `.plank.html`
 added. A zip archive is about 30% smaller for a large table (the data inside is
 already compressed) and up to 70% smaller for a small one, where the
 viewer's own code is most of the file. The person you send it to unzips it
-and double-clicks the `.pqv.html` file inside.
+and double-clicks the `.plank.html` file inside.
 
 It is an htmlwidget, so it also works in R Markdown and Quarto chunks
 (use `embed-resources: true` for a single-file document) and in Shiny with
-`pqviewOutput()` / `renderPqview()`. In Shiny, the reader's filtered rows
+`plankOutput()` / `renderPlank()`. In Shiny, the reader's filtered rows
 come back as `input$<id>_rows` (row numbers, in the order shown), the
 columns, sort and combined filter as `input$<id>_state`, and the row open in
 the row panel as `input$<id>_row`.
 
-In RStudio, the **View in pqview** add-in (Addins menu) opens the selected
+In RStudio, the **View in Plank** add-in (Addins menu) opens the selected
 data frame, or the selected path to a parquet file.
 
 ```r
 # Show numbers with fixed decimals and thousands separators
-pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
+plank(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
 ```
 
 ## What the page does
@@ -180,9 +192,9 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   search, WHERE query, sort and Counts settings under a name, and switches
   back to any saved view. The button names the view in use, if any.
   - Views are kept in the reader's browser, for this data.
-  - Views passed from R with `views = list("Name" = pqview_view(...))` are
+  - Views passed from R with `views = list("Name" = plank_view(...))` are
     listed under "In this report" for every reader.
-  - **Copy as R code** writes the `pqview_view()` call for the current state,
+  - **Copy as R code** writes the `plank_view()` call for the current state,
     with the column filters and search written as `where`, ready to paste
     into the `views` argument.
   - Switching views is an undoable step. Views don't include marker columns.
@@ -231,11 +243,16 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   settings: accent colour, text colour (dark shades on light themes, light
   shades on dark ones), table font (mono, sans or serif), text size, row
   spacing and **Controls**: at the top, or at the bottom below the table
-  (popovers then open upwards). Each reader's choices are remembered in
+  (popovers then open upwards). **More options** fine-tunes any theme:
+  **Decor** (Starship's coloured bands and filled buttons; turn them off, or
+  add them to another theme in its accent colour), **Shapes** (square,
+  rounded or pill), **Controls font** (sans, condensed capitals, mono or
+  serif; the table keeps its own Font setting) and **Contrast** (soft,
+  normal or high lines). Each starts at "Theme", the theme's own choice. Each reader's choices are remembered in
   their browser; `theme =`, `font =` and `controls =` set the starting look
   from R. (`theme = "terminal"`, from earlier versions, now gives Starship.)
-- **Keyboard help.** The faint `?` button beside it lists every keyboard
-  shortcut (the `?` key does the same).
+- **About and keyboard help.** The faint `?` button beside it says what
+  Plank is and lists every keyboard shortcut (the `?` key does the same).
 - **Copy column names.** Faint copy buttons in the column list copy names
   as R code, `c("age", "income")`: beside the selected count (every column
   in the table, in table order), on the In table heading (those in the
@@ -256,7 +273,7 @@ pqview(my_data, formats = list(income = list(decimals = 2, big_mark = TRUE)))
   TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty cells are
   missing; codes with leading zeros stay text); Excel types come from the
   cell formats; parquet may be compressed with snappy, gzip or zstd.
-  `save_pqview(NULL, ...)` writes a blank viewer for this.
+  `save_plank(NULL, ...)` writes a blank viewer for this.
 - **Passwords.** `password =` encrypts the data in R (AES-256; the key comes
   from the password through PBKDF2-SHA256 with 300,000 iterations, a few
   seconds), and the viewer asks for the password before showing anything.
@@ -335,7 +352,7 @@ on a laptop with the 30-column demo table:
 
 - Everything is held in browser memory, which is what makes it instant. It
   works well up to about a million rows of 30 columns (see the table above);
-  `pqview()` warns when the embedded data passes 50 MB.
+  `plank()` warns when the embedded data passes 50 MB.
 - The data is gzip-compressed parquet by default, about 30% smaller than
   snappy; `compression = "snappy"` writes and opens a little faster. The HTML
   file is about 1.33x the parquet size plus roughly 250 KB.
@@ -366,7 +383,7 @@ The browser code lives in `srcjs/` and is bundled with
 [hyparquet-writer](https://github.com/hyparam/hyparquet-writer) and
 [fflate](https://github.com/101arrowz/fflate) (gzip), all MIT-licensed (see
 `inst/COPYRIGHTS`), into
-`inst/htmlwidgets/lib/pqview/pqview-core.js`. The bundle is committed, so
+`inst/htmlwidgets/lib/plank/plank-core.js`. The bundle is committed, so
 Node is only needed to change the JavaScript.
 
 ```bash
@@ -379,7 +396,7 @@ npm run build    # rebuild the bundle
 ```r
 devtools::test()                      # R tests
 source("examples/make-demo.R")        # writes examples/demo.html (100k x 30) and demo-locked.html
-source("examples/make-sample.R")      # writes examples/sample.pqv.html (10k x 30) and viewer.pqv.html (blank), kept in git
+source("examples/make-viewer.R")      # writes examples/viewer.plank.html (blank), kept in git
 ```
 
 End-to-end tests drive the demo page in a real browser and compare every

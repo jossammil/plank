@@ -110,7 +110,7 @@ test('R code for a view', () => {
   const v = makeView('', state({ counts: { by: ['region'] } }))
   const code = viewToR(v, 'age >= 30 AND "odd \\\\ name" = \'x\'', 'My "view"')
   assert.equal(code, [
-    '"My \\"view\\"" = pqview_view(',
+    '"My \\"view\\"" = plank_view(',
     '  columns = c("age", "region"),',
     '  where = "age >= 30 AND \\"odd \\\\\\\\ name\\" = \'x\'",',
     '  sort = "-age",',
@@ -118,7 +118,7 @@ test('R code for a view', () => {
     ')',
   ].join('\n'))
   const bare = viewToR(makeView('', state({ columns: [], sort: [] })), '')
-  assert.equal(bare, 'pqview_view(\n  columns = character(0)\n)')
+  assert.equal(bare, 'plank_view(\n  columns = character(0)\n)')
 })
 
 test('pinned columns are part of a view', () => {

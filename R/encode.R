@@ -88,7 +88,7 @@ fix_names <- function(nms) {
   if (length(changed)) {
     shown <- utils::head(changed, 8L)
     message(
-      "pqview renamed ", length(changed), " column", if (length(changed) > 1L) "s", " so every name is ",
+      "plank renamed ", length(changed), " column", if (length(changed) > 1L) "s", " so every name is ",
       "unique and not blank: ",
       paste0(ifelse(is.na(old[shown]) | !nzchar(old[shown]), "(blank)", paste0("'", old[shown], "'")),
         " -> '", nms[shown], "'", collapse = ", "),

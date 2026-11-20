@@ -1,7 +1,7 @@
 // Saved views: named states of the table (columns and their order, pinned
 // columns, column filters, search, WHERE query, sort and the Counts panel) that can be
 // switched between. Views are kept per data set in the browser, and a
-// report's author can add views from R (see pqview_view()).
+// report's author can add views from R (see plank_view()).
 
 const SPEC_KEYS = ['na', 'min', 'max', 'minText', 'maxText', 'contains', 'mode', 'caseSensitive', 'bool', 'invert', 'join', 'paused']
 const SPEC_DEFAULT = {
@@ -176,11 +176,11 @@ const rString = (s) => '"' + String(s).replace(/\\/g, '\\\\').replace(/"/g, '\\"
 const rVector = (xs) => (xs.length === 1 ? rString(xs[0]) : `c(${xs.map(rString).join(', ')})`)
 
 /**
- * R code for pqview_view() that reproduces a view: the column filters and
+ * R code for plank_view() that reproduces a view: the column filters and
  * search are written into `where` (the same text as See Query shows).
  * @param {object} v a view
  * @param {string} where the combined WHERE condition
- * @param {string} [name] view name, written as `"name" = pqview_view(...)` for a list of views
+ * @param {string} [name] view name, written as `"name" = plank_view(...)` for a list of views
  */
 export function viewToR(v, where, name = '') {
   const args = []
@@ -189,6 +189,6 @@ export function viewToR(v, where, name = '') {
   if (v.pinned && v.pinned.length) args.push(`pin = ${rVector(v.pinned)}`)
   if (v.sort.length) args.push(`sort = ${rVector(v.sort.map((s) => (s.dir === 'desc' ? '-' : '') + s.name))}`)
   if (v.counts) args.push(`counts = ${rVector(v.counts.by)}`)
-  const code = `pqview_view(\n  ${args.join(',\n  ')}\n)`
+  const code = `plank_view(\n  ${args.join(',\n  ')}\n)`
   return name ? `${rString(name)} = ${code}` : code
 }

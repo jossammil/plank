@@ -1,6 +1,7 @@
-// pqview: wires the dataset, picker, grid, query bar and toolbar together.
+// plank: wires the dataset, picker, grid, query bar and toolbar together.
 
 import { h, debounce, idle, COPY_ICON } from './dom.js'
+import { migrateKeys } from './storage.js'
 import { decodeBase64, openDataset } from './load.js'
 import { computeView, emptySpec, isActive, hasOptions, compileRegex } from './filters.js'
 import { parseQuery, compileQuery, evaluateQuery, resolveColumn, QueryError } from './query.js'
@@ -121,23 +122,28 @@ const NA_CUSTOM_MAX = 24
 
 // Viewer preferences are remembered per browser. Storage can be unavailable
 // (private windows, blocked site data), so every access is guarded.
+try {
+  migrateKeys(typeof window !== 'undefined' ? window.localStorage : null)
+} catch {
+  // storage blocked
+}
 function loadPref(key) {
   try {
-    return window.localStorage.getItem('pqview.' + key)
+    return window.localStorage.getItem('plank.' + key)
   } catch {
     return null
   }
 }
 function savePref(key, value) {
   try {
-    window.localStorage.setItem('pqview.' + key, value)
+    window.localStorage.setItem('plank.' + key, value)
   } catch {
     // ignore
   }
 }
 function clearPref(key) {
   try {
-    window.localStorage.removeItem('pqview.' + key)
+    window.localStorage.removeItem('plank.' + key)
   } catch {
     // ignore
   }
@@ -152,7 +158,7 @@ function clearPref(key) {
  */
 function mountInstance(el, x, ctx = {}) {
   const t0 = performance.now()
-  if (el.pqview && el.pqview.destroy) el.pqview.destroy()
+  if (el.plank && el.plank.destroy) el.plank.destroy()
   el.textContent = ''
   el.classList.add('pqv')
   // Tabs, when the shell has more than one dataset open (placed at the foot
@@ -193,7 +199,7 @@ function mountInstance(el, x, ctx = {}) {
   }
   const timings = {}
   const api = { state, timings, ready: null, tabStrip, destroy() { dead = true } }
-  el.pqview = api
+  el.plank = api
 
   const loading = h('div', { class: 'pqv-loading', text: 'Loading data' })
   // A password-protected file asks for its password before anything else.
@@ -204,7 +210,7 @@ function mountInstance(el, x, ctx = {}) {
   api.ready = (locked ? askPassword() : Promise.resolve()).then(init).catch((err) => {
     el.textContent = ''
     el.append(h('div', { class: 'pqv-error', role: 'alert' },
-      h('strong', { text: 'pqview could not read the data. ' }),
+      h('strong', { text: 'Plank could not read the data. ' }),
       String((err && err.message) || err)))
     throw err
   })
@@ -342,8 +348,8 @@ function mountInstance(el, x, ctx = {}) {
     }) : null
     if (openBtn) openBtn.innerHTML = OPEN_ICON
     const helpBtn = h('button', {
-      class: 'pqv-pref pqv-pref-icon pqv-pref-help', type: 'button', title: 'Keyboard shortcuts (?)',
-      'aria-label': 'Keyboard shortcuts', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
+      class: 'pqv-pref pqv-pref-icon pqv-pref-help', type: 'button', title: 'About Plank and keyboard shortcuts (?)',
+      'aria-label': 'About Plank and keyboard shortcuts', 'aria-haspopup': 'dialog', 'aria-expanded': 'false',
     })
     helpBtn.innerHTML = HELP_ICON
 
@@ -1138,7 +1144,7 @@ function mountInstance(el, x, ctx = {}) {
     const dataStore = x.enc ? memoryStorage() : null
     const store = () => dataStore || window.localStorage
     const kept = x.enc ? 'kept until the page is closed' : 'saved in this browser'
-    const marksKey = 'pqview.marks.' + dataPrint
+    const marksKey = 'plank.marks.' + dataPrint
     const marksStore = { error: null }
     const saveMarks = () => {
       try {
@@ -1770,7 +1776,7 @@ function mountInstance(el, x, ctx = {}) {
     paintHistory()
 
     // ---- saved views ------------------------------------------------------
-    // A view is a named state of the table. Views from R (pqview(views = ...))
+    // A view is a named state of the table. Views from R (plank(views = ...))
     // come with the file; views saved here stay in this browser.
     const defaultColumns = (x.columns == null
       ? ds.fields.slice(0, DEFAULT_VISIBLE).map((f) => f.name)
@@ -1801,7 +1807,7 @@ function mountInstance(el, x, ctx = {}) {
       const v = normalizeView(raw)
       if (v && !authorViews.some((a) => a.name === v.name)) authorViews.push(resolveView(v))
     }
-    const viewsKey = 'pqview.views.' + dataPrint
+    const viewsKey = 'plank.views.' + dataPrint
     const viewStore = { error: null }
     let savedViews = []
     try {
@@ -2012,7 +2018,7 @@ function mountInstance(el, x, ctx = {}) {
       }
       const rBtn = h('button', {
         class: 'pqv-btn pqv-btn-sm', type: 'button',
-        title: 'Copy pqview_view() code for the current view, to add it to a report with pqview(views = ...)',
+        title: 'Copy plank_view() code for the current view, to add it to a report with plank(views = ...)',
       })
       rBtn.innerHTML = COPY_ICON + '<span>Copy as R code</span>'
       rBtn.addEventListener('click', async () => {
@@ -2409,7 +2415,7 @@ const tabLabel = (name) => (name.length > 28 ? name.slice(0, 26) + '…' : name)
  */
 export function mount(el, x) {
   if (el.pqshell) el.pqshell.destroy()
-  else if (el.pqview && el.pqview.destroy) el.pqview.destroy()
+  else if (el.plank && el.plank.destroy) el.plank.destroy()
   el.textContent = ''
   // Older versions drew the viewer on this element itself.
   el.classList.remove('pqv', 'pqv-standalone', 'pqv-minimal')
@@ -2490,7 +2496,7 @@ export function mount(el, x) {
     tabs.forEach((t, j) => { t.root.hidden = j !== k })
     const api = tabs[k].api
     if (api && api.refreshLook) api.refreshLook()
-    el.pqview = api
+    el.plank = api
     renderTabs()
   }
 
@@ -2512,7 +2518,7 @@ export function mount(el, x) {
       source,
       openFile: () => openFile(),
     })
-    el.pqview = tab.api
+    el.plank = tab.api
     renderTabs()
     return tab.api
   }
@@ -2628,11 +2634,11 @@ export function mount(el, x) {
     }
     const openBtn = h('button', { class: 'pqv-btn pqv-blank-open', type: 'button', text: 'Open a file…', onclick: () => openFile() })
     blank.append(h('div', { class: 'pqv-blank-box' },
-      h('div', { class: 'pqv-blank-title', text: x.title || 'pqview' }),
+      h('div', { class: 'pqv-blank-title', text: x.title || 'Plank' }),
       h('p', { class: 'pqv-blank-text', text: 'Drop a CSV, TSV, Excel (.xlsx) or parquet file here, or' }),
       openBtn,
       h('p', { class: 'pqv-blank-note', text: 'Files are read in this browser; nothing is uploaded. Press O to open, and open more files as tabs.' })))
-    el.pqview = blank.pqview = { blank: true, ready: Promise.resolve(), openFiles, destroy() {} }
+    el.plank = blank.plank = { blank: true, ready: Promise.resolve(), openFiles, destroy() {} }
   }
 
   const shell = {
@@ -2656,5 +2662,5 @@ export function mount(el, x) {
 
   if (x.data !== undefined && x.data !== null) return addTab(x.title || 'Data', x, null, false)
   showBlank()
-  return el.pqview
+  return el.plank
 }

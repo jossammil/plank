@@ -1,4 +1,4 @@
-Name: View in pqview
-Description: Opens the selected data frame, or the parquet file whose path is selected, in pqview. With nothing selected, asks for one.
-Binding: pqview_addin
+Name: View in plank
+Description: Opens the selected data frame, or the parquet file whose path is selected, in plank. With nothing selected, asks for one.
+Binding: plank_addin
 Interactive: true

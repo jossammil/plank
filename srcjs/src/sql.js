@@ -1,5 +1,5 @@
 // Writes the current column filters, global search and WHERE query as one
-// WHERE condition in pqview's query syntax, for the "full query" view. The
+// WHERE condition in plank's query syntax, for the "full query" view. The
 // text runs in the query bar and selects the same rows.
 
 import { hasValueFilter, isActive, textError, compileRegex } from './filters.js'

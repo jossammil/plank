@@ -3,6 +3,13 @@
 
 import { h } from './dom.js'
 
+/** What Plank is, shown at the top of the help sheet and on the website. */
+export const ABOUT = {
+  lead: 'Plank is a data viewer that runs entirely in your browser: no server, no install, nothing uploaded.',
+  file: 'A plank file (.plank.html) is one web page with the data packed inside, so it can be emailed, shared or opened offline.',
+  credit: 'Frankensteined by MillJS.',
+}
+
 /** Single keys that jump to a tool, active while focus is not in a text box. */
 export const SHORTCUTS = [
   ['palette', 'Ctrl/⌘ K', 'Command palette: run any action or go to a column'],
@@ -16,7 +23,7 @@ export const SHORTCUTS = [
   ['minimal', 'M', 'Minimal view: just the table'],
   ['open', 'O', 'Open a file as a new tab'],
   ['goto', 'G', 'Go to a row'],
-  ['help', '?', 'Keyboard shortcuts'],
+  ['help', '?', 'About Plank and keyboard shortcuts'],
 ]
 
 /** Keys of the table itself (focus on the table). */
@@ -65,8 +72,11 @@ export function helpSheet() {
       h('td', null, h('kbd', { text: key })),
       h('td', { text: what })))))
   return h('div', { class: 'pqv-pop pqv-keys', role: 'dialog', 'aria-label': 'Keyboard shortcuts' },
-    h('div', { class: 'pqv-pop-title', text: 'Keyboard shortcuts' }),
+    h('div', { class: 'pqv-pop-title', text: 'About Plank and keyboard shortcuts' }),
     h('div', { class: 'pqv-keys-body' },
+      h('p', { class: 'pqv-keys-about' },
+        ABOUT.lead + ' ' + ABOUT.file + ' ',
+        h('em', { text: ABOUT.credit })),
       h('div', { class: 'pqv-keys-head', text: 'Anywhere in the viewer' }),
       table(SHORTCUTS.map((s) => [s[1], s[2]])),
       h('div', { class: 'pqv-keys-head', text: 'In the table' }),

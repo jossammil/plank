@@ -101,8 +101,8 @@ test_that("blank and repeated column names are fixed, with a message", {
   expect_identical(names(p$data), c("column_1", "b", "b.1", "column_4"))
   expect_identical(names(p$meta), names(p$data))
   expect_silent(prepare_frame(data.frame(a = 1, b = 2)))
-  expect_message(w <- pqview(setNames(data.frame(1:3), "")), "column_1")
-  expect_s3_class(w, "pqview")
+  expect_message(w <- plank(setNames(data.frame(1:3), "")), "column_1")
+  expect_s3_class(w, "plank")
 })
 
 test_that("labelled values are shown as their labels", {

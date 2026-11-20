@@ -8,29 +8,29 @@
 #' not run pandoc, so it stays fast when the embedded data is large.
 #'
 #' @section File names:
-#' Files from pqview are named `name.pqv.html` by convention: the `.html`
-#' ending makes the file open in a browser on any computer, and the `.pqv`
-#' before it makes pqview files easy to find (search for `.pqv.html`) and
+#' Files from Plank are named `name.plank.html` by convention: the `.html`
+#' ending makes the file open in a browser on any computer, and the `.plank`
+#' before it makes plank files easy to find (search for `.plank.html`) and
 #' tell apart from other web pages. A `file` without an extension, or ending
-#' in `.pqv`, gets `.pqv.html` (or `.html`) added. A file name that does not
+#' in `.plank` (or the older `.pqv`), gets `.plank.html` (or `.html`) added. A file name that does not
 #' end in `.html` or `.htm` gives a warning, because browsers show such a
 #' file as plain text instead of opening the viewer.
 #'
 #' @section Zipped files:
 #' With `zip = TRUE` (or a `file` ending in `.zip`), the HTML file is put in a
-#' zip archive, `name.pqv.zip`, which is smaller to email or upload. The
+#' zip archive, `name.plank.zip`, which is smaller to email or upload. The
 #' embedded data is already compressed, so the zip file is about 30% smaller
 #' than the HTML file for a large table, and up to 70% smaller for a small
 #' one, where the viewer's own code is most of the file. Whoever receives it
-#' unzips it and double-clicks the `.pqv.html` file inside. The archive is
+#' unzips it and double-clicks the `.plank.html` file inside. The archive is
 #' written with the \pkg{zip} package when it is installed, and otherwise
 #' with the `zip` command line program (see [utils::zip()]).
 #'
-#' @param x A [pqview()] widget, or anything [pqview()] accepts as `data`.
+#' @param x A [plank()] widget, or anything [plank()] accepts as `data`.
 #'   `NULL` writes a blank viewer that opens the reader's own CSV, TSV, Excel
 #'   and parquet files.
 #' @param file Path of the file to write. See **File names** below.
-#' @param ... Passed to [pqview()] when `x` is not already a widget.
+#' @param ... Passed to [plank()] when `x` is not already a widget.
 #' @param page_title Text for the browser tab. Defaults to the widget title,
 #'   then the file name.
 #' @param open Open the file in a browser afterwards? With `zip = TRUE`, a
@@ -42,23 +42,23 @@
 #'   invisibly.
 #' @examples
 #' if (interactive()) {
-#'   # Writes mtcars.pqv.html in the temporary folder
-#'   save_pqview(mtcars, file.path(tempdir(), "mtcars"), title = "mtcars", open = TRUE)
+#'   # Writes mtcars.plank.html in the temporary folder
+#'   save_plank(mtcars, file.path(tempdir(), "mtcars"), title = "mtcars", open = TRUE)
 #'
-#'   # Writes mtcars.pqv.zip, holding mtcars.pqv.html
-#'   save_pqview(mtcars, file.path(tempdir(), "mtcars"), zip = TRUE)
+#'   # Writes mtcars.plank.zip, holding mtcars.plank.html
+#'   save_plank(mtcars, file.path(tempdir(), "mtcars"), zip = TRUE)
 #' }
 #' @export
-save_pqview <- function(x, file, ..., page_title = NULL, open = FALSE, zip = FALSE) {
-  if (!inherits(x, "pqview")) {
-    x <- pqview(x, ...)
+save_plank <- function(x, file, ..., page_title = NULL, open = FALSE, zip = FALSE) {
+  if (!inherits(x, "plank")) {
+    x <- plank(x, ...)
   }
   stopifnot(is.character(file), length(file) == 1L, !is.na(file), nzchar(file))
   stopifnot(is.logical(zip), length(zip) == 1L, !is.na(zip))
   paths <- save_paths(file, zip)
   html_file <- paths$html
   if (is.null(page_title)) {
-    page_title <- x$x$title %||% sub("(\\.pqv)?\\.html?$", "", basename(html_file), ignore.case = TRUE)
+    page_title <- x$x$title %||% sub("(\\.plank|\\.pqv)?\\.html?$", "", basename(html_file), ignore.case = TRUE)
   }
 
   rendered <- htmltools::renderTags(htmltools::as.tags(x, standalone = TRUE))
@@ -82,7 +82,7 @@ save_pqview <- function(x, file, ..., page_title = NULL, open = FALSE, zip = FAL
 
   if (!is.null(paths$zip)) {
     # Written in its own temporary folder so the archive holds just the file.
-    tmp <- tempfile("pqview-zip")
+    tmp <- tempfile("plank-zip")
     dir.create(tmp)
     html_file <- file.path(tmp, basename(html_file))
   }
@@ -105,7 +105,7 @@ save_pqview <- function(x, file, ..., page_title = NULL, open = FALSE, zip = FAL
   invisible(out)
 }
 
-# Where save_pqview() writes: list(html, zip), with the .pqv.html naming
+# Where save_plank() writes: list(html, zip), with the .plank.html naming
 # convention applied. `zip` is NULL unless a zip archive is wanted.
 save_paths <- function(file, zip = FALSE) {
   if (grepl("\\.zip$", file, ignore.case = TRUE)) {
@@ -117,13 +117,13 @@ save_paths <- function(file, zip = FALSE) {
   }
   base <- basename(html)
   if (!nzchar(tools::file_ext(base))) {
-    html <- paste0(html, ".pqv.html")
-  } else if (grepl("\\.pqv$", base, ignore.case = TRUE)) {
+    html <- paste0(html, ".plank.html")
+  } else if (grepl("\\.(plank|pqv)$", base, ignore.case = TRUE)) {
     html <- paste0(html, ".html")
   } else if (!grepl("\\.html?$", base, ignore.case = TRUE)) {
     warning(
       "'", base, "' does not end in .html, so browsers will show it as text ",
-      "instead of opening the viewer. Use a name ending in .pqv.html.",
+      "instead of opening the viewer. Use a name ending in .plank.html.",
       call. = FALSE
     )
   }

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plank: data viewer in one HTML file</title>
+<meta name="description" content="{{ABOUT_PLAIN}}">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='12' width='26' height='8' rx='2' fill='%23b4561f'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #fbfaf7;
+    --surface: #ffffff;
+    --fg: #1f2328;
+    --muted: #5d6570;
+    --line: #e3e1db;
+    --accent: #b4561f;
+    --accent-fg: #ffffff;
+    --accent-soft: #f6e8de;
+    --good: #24713f;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15171a;
+      --surface: #1d2024;
+      --fg: #e8e6e1;
+      --muted: #a2a8b0;
+      --line: #30343a;
+      --accent: #f0915a;
+      --accent-fg: #1a0e06;
+      --accent-soft: #3a2619;
+      --good: #6fcf8f;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 48px 20px 32px; }
+  h1 { margin: 0 0 4px; font-size: 44px; letter-spacing: -0.02em; line-height: 1.1; }
+  h1 .plank-bar { display: inline-block; width: 0.9em; height: 0.26em; margin-right: 0.18em; border-radius: 3px; background: var(--accent); vertical-align: 0.16em; }
+  .tagline { margin: 0 0 22px; color: var(--muted); font-size: 18px; }
+  .about { max-width: 640px; margin: 0 0 24px; font-size: 18px; }
+  .about em { color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px;
+    border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); background: transparent;
+    font-weight: 600; text-decoration: none;
+  }
+  .btn-primary { background: var(--accent); color: var(--accent-fg); }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .btn small { font-weight: 400; opacity: 0.8; }
+  .note { margin: 0; color: var(--muted); font-size: 14px; }
+  section { margin-top: 48px; }
+  h2 { margin: 0 0 14px; font-size: 24px; letter-spacing: -0.01em; }
+  h3 { margin: 22px 0 8px; font-size: 16px; }
+  .features { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
+  .features li { padding: 14px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  .features b { display: block; margin-bottom: 2px; }
+  .features span { color: var(--muted); font-size: 14.5px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { padding: 9px 14px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  tr:last-child > * { border-bottom: 0; }
+  thead th { color: var(--muted); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.win { color: var(--good); font-weight: 600; }
+  kbd {
+    display: inline-block; min-width: 1.6em; padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+    border-radius: 5px; background: var(--bg); font: 13px/1.5 var(--mono); text-align: center; white-space: nowrap;
+  }
+  .keys td:first-child { width: 36%; }
+  .bars { display: grid; gap: 8px; margin: 14px 0 6px; }
+  .bar-row { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 10px; font-size: 14px; }
+  .bar-track { height: 14px; border-radius: 7px; background: var(--accent-soft); overflow: hidden; }
+  .bar { display: block; height: 100%; border-radius: 7px; background: var(--accent); }
+  .bar.excel { background: var(--muted); }
+  .bar-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+  footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+  footer a { color: inherit; }
+  @media (max-width: 560px) {
+    main { padding-top: 32px; }
+    h1 { font-size: 36px; }
+    .about, .tagline { font-size: 16.5px; }
+    .bar-row { grid-template-columns: 84px 1fr 62px; }
+    th, td { padding: 8px 10px; }
+    table { font-size: 14px; }
+    td.num, th.num { white-space: normal; }
+    .keys td:first-child { width: 42%; }
+    kbd { white-space: normal; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1><span class="plank-bar" aria-hidden="true"></span>Plank</h1>
+    <p class="tagline">A fast data viewer in one HTML file.</p>
+    <p class="about">{{ABOUT_HTML}}</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="demo.html">Open the demo <small>{{DEMO_MB}} MB</small></a>
+      <a class="btn" href="viewer.html">Open your own file</a>
+    </div>
+    <p class="note">The demo has 100,000 fake records with 30 columns of every type. The viewer opens CSV, TSV, Excel and parquet files; nothing leaves your computer.</p>
+  </header>
+
+  <section aria-labelledby="features">
+    <h2 id="features">What it does</h2>
+    <ul class="features">
+{{FEATURES}}
+    </ul>
+  </section>
+
+  <section aria-labelledby="speed">
+    <h2 id="speed">Size and speed</h2>
+    <p class="note">The same {{ROWS}} rows × {{COLS}} columns saved from R as an Excel workbook and as a plank file. Measured {{MEASURED}} on {{MACHINE}}; opening times in {{BROWSER}}.</p>
+    <div class="bars" role="img" aria-label="File size: Excel {{XLSX_MB}} MB, plank file {{PLANK_MB}} MB, zipped plank file {{ZIP_MB}} MB">
+{{BARS}}
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col"></th><th scope="col" class="num">Excel (.xlsx)</th><th scope="col" class="num">Plank file</th></tr></thead>
+        <tbody>
+{{SPEED_ROWS}}
+        </tbody>
+      </table>
+    </div>
+    <h3>Opening your own files in the viewer</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">File</th><th scope="col" class="num">Size</th><th scope="col" class="num">Table shown in</th></tr></thead>
+        <tbody>
+{{OPEN_ROWS}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="keys">
+    <h2 id="keys">Keyboard shortcuts</h2>
+    <h3>Anywhere in the viewer</h3>
+    <div class="table-wrap"><table class="keys"><tbody>
+{{SHORTCUTS}}
+    </tbody></table></div>
+    <h3>In the table</h3>
+    <div class="table-wrap"><table class="keys"><tbody>
+{{GRID_KEYS}}
+    </tbody></table></div>
+    <p class="note">Single-letter keys work when the cursor is not in a text box. The <kbd>?</kbd> button at the top right of any plank file lists them too.</p>
+  </section>
+
+  <footer>
+    Plank {{VERSION}}. {{CREDIT}}
+  </footer>
+</main>
+</body>
+</html>

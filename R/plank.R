@@ -7,7 +7,7 @@
 #'
 #' Printing the result shows it in the RStudio viewer or a browser. It can
 #' also be placed in R Markdown and Quarto documents, used in Shiny with
-#' [pqviewOutput()], or written to one portable file with [save_pqview()].
+#' [plankOutput()], or written to one portable file with [save_plank()].
 #'
 #' @param data A data frame (or something [as.data.frame()] understands), or
 #'   the path to a `.parquet` file. `NULL` makes a blank viewer that opens
@@ -42,10 +42,10 @@
 #'   Readers can change them in each column's options.
 #' @param counts Optional one or two column names: the **Counts** panel opens
 #'   with the filtered rows counted by these columns.
-#' @param views Optional named list of [pqview_view()] objects, offered in
+#' @param views Optional named list of [plank_view()] objects, offered in
 #'   the viewer's **Views** menu so readers can switch between prepared
 #'   states of the table, as in
-#'   `list("Adults" = pqview_view(where = "age >= 18", sort = "-age"))`.
+#'   `list("Adults" = plank_view(where = "age >= 18", sort = "-age"))`.
 #' @param theme Starting colour theme: `"auto"` follows the reader's system
 #'   light or dark setting; `"classic"`, `"modern"`, `"dark"`, `"vintage"`
 #'   (sepia on cream) and `"starship"` (a starship console: black, with
@@ -114,7 +114,7 @@
 #' * **Views** saves the current columns, filters, search, WHERE query, sort
 #'   and Counts settings under a name, in the reader's browser, and switches
 #'   between saved views. Views passed from R with `views` are listed too,
-#'   and **Copy as R code** writes [pqview_view()] code for the current
+#'   and **Copy as R code** writes [plank_view()] code for the current
 #'   state.
 #' * Click a row number to open the row panel at the right: every column of
 #'   that row, shown or not, at full precision, with a box to find a column.
@@ -147,8 +147,12 @@
 #'   Appearance window: a colour theme (Auto, Classic, Modern, Dark, Vintage
 #'   or Starship), an accent colour, a text colour, the table font (mono, sans
 #'   or serif), text size, row spacing and whether the controls sit above or
-#'   below the table. The choices are remembered in the reader's browser.
-#' * The faint `?` button beside it lists the keyboard shortcuts.
+#'   below the table. Under **More options**: decor (coloured bands and filled
+#'   buttons, Starship's own, which can be turned off or added to any theme),
+#'   shapes (square, rounded or pill), the controls' font and contrast. The
+#'   choices are remembered in the reader's browser.
+#' * The faint `?` button beside it says what Plank is and lists the keyboard
+#'   shortcuts.
 #' * The faint copy buttons in the column list copy column names as R code,
 #'   `c("a", "b")`: those in the table, or those a search found.
 #' * The WHERE bar starts closed; once a reader opens it or types a
@@ -188,20 +192,20 @@
 #' browser and never uploaded. Column types are guessed from CSV text
 #' (numbers, TRUE/FALSE, ISO dates and date-times; `NA`, `NULL` and empty
 #' cells are missing) and taken from the cell formats in Excel. Parquet files
-#' compressed with snappy, gzip or zstd can be opened. `pqview(NULL)` (or
-#' `save_pqview(NULL, "viewer.pqv.html")`) makes a blank viewer for this.
+#' compressed with snappy, gzip or zstd can be opened. `plank(NULL)` (or
+#' `save_plank(NULL, "viewer.plank.html")`) makes a blank viewer for this.
 #'
 #' @examples
 #' if (interactive()) {
-#'   pqview(mtcars)
-#'   pqview(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
+#'   plank(mtcars)
+#'   plank(iris, columns = c("Species", "Sepal.Length"), title = "Iris",
 #'          notes = "Fisher's iris data, 150 flowers")
-#'   pqview(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
-#'   pqview(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
-#'          views = list("Heavy" = pqview_view(where = "wt > 4", sort = "-wt")))
+#'   plank(mtcars, where = "mpg > 25 OR cyl = 8", font = "sans")
+#'   plank(mtcars, sort = c("cyl", "-mpg"), counts = "cyl",
+#'          views = list("Heavy" = plank_view(where = "wt > 4", sort = "-wt")))
 #' }
 #' @export
-pqview <- function(data,
+plank <- function(data,
                    columns = NULL,
                    title = NULL,
                    notes = NULL,
@@ -245,7 +249,7 @@ pqview <- function(data,
     x <- list(theme = theme, font = font, controls = controls, top_offset = top_offset,
               digits = digits, minimal = minimal)
     if (!is.null(title)) x$title <- title
-    return(pqview_widget(x, width, height, elementId))
+    return(plank_widget(x, width, height, elementId))
   }
 
   check_names_arg(sort, "sort")
@@ -294,16 +298,16 @@ pqview <- function(data,
   if (!is.null(counts)) x$counts <- as.list(counts)
   if (length(views)) x$views <- views
   if (!is.null(password)) x <- encrypt_payload(x, enc$bytes, read_password(password))
-  pqview_widget(x, width, height, elementId)
+  plank_widget(x, width, height, elementId)
 }
 
-pqview_widget <- function(x, width, height, elementId) {
+plank_widget <- function(x, width, height, elementId) {
   htmlwidgets::createWidget(
-    name = "pqview",
+    name = "plank",
     x = x,
     width = width,
     height = height,
-    package = "pqview",
+    package = "plank",
     elementId = elementId,
     sizingPolicy = htmlwidgets::sizingPolicy(
       defaultWidth = "100%",
@@ -318,13 +322,13 @@ pqview_widget <- function(x, width, height, elementId) {
   )
 }
 
-#' Shiny bindings for pqview
+#' Shiny bindings for Plank
 #'
-#' Output and render functions for using [pqview()] in Shiny applications.
+#' Output and render functions for using [plank()] in Shiny applications.
 #'
 #' The viewer reports what the reader is looking at as Shiny inputs, named
 #' after the output id:
-#' * `input$<id>_rows`: the row numbers (of the data given to [pqview()]) of
+#' * `input$<id>_rows`: the row numbers (of the data given to [plank()]) of
 #'   the filtered rows, in the order shown.
 #' * `input$<id>_state`: a list with `columns` (shown, in order), `sort`
 #'   (`-` marks descending), `pinned`, `where` (every filter, the search and
@@ -336,18 +340,18 @@ pqview_widget <- function(x, width, height, elementId) {
 #'
 #' @param outputId Output variable to read from.
 #' @param width,height Must be a valid CSS unit (like `"100%"` or `"600px"`).
-#' @param expr An expression that returns a [pqview()] widget.
+#' @param expr An expression that returns a [plank()] widget.
 #' @param env The environment in which to evaluate `expr`.
 #' @param quoted Is `expr` a quoted expression?
 #'
-#' @return `pqviewOutput()` returns a Shiny output element; `renderPqview()`
+#' @return `plankOutput()` returns a Shiny output element; `renderPlank()`
 #'   returns a render function.
 #' @examples
 #' if (interactive() && requireNamespace("shiny", quietly = TRUE)) {
 #'   shiny::shinyApp(
-#'     shiny::fluidPage(pqviewOutput("cars"), shiny::verbatimTextOutput("picked")),
+#'     shiny::fluidPage(plankOutput("cars"), shiny::verbatimTextOutput("picked")),
 #'     function(input, output) {
-#'       output$cars <- renderPqview(pqview(mtcars))
+#'       output$cars <- renderPlank(plank(mtcars))
 #'       output$picked <- shiny::renderPrint({
 #'         rows <- unlist(input$cars_rows)
 #'         c(rows = length(rows), mean_mpg = mean(mtcars$mpg[rows]))
@@ -355,15 +359,15 @@ pqview_widget <- function(x, width, height, elementId) {
 #'     }
 #'   )
 #' }
-#' @name pqview-shiny
+#' @name plank-shiny
 #' @export
-pqviewOutput <- function(outputId, width = "100%", height = "600px") {
-  htmlwidgets::shinyWidgetOutput(outputId, "pqview", width, height, package = "pqview")
+plankOutput <- function(outputId, width = "100%", height = "600px") {
+  htmlwidgets::shinyWidgetOutput(outputId, "plank", width, height, package = "plank")
 }
 
-#' @rdname pqview-shiny
+#' @rdname plank-shiny
 #' @export
-renderPqview <- function(expr, env = parent.frame(), quoted = FALSE) {
+renderPlank <- function(expr, env = parent.frame(), quoted = FALSE) {
   if (!quoted) expr <- substitute(expr)
-  htmlwidgets::shinyRenderWidget(expr, pqviewOutput, env, quoted = TRUE)
+  htmlwidgets::shinyRenderWidget(expr, plankOutput, env, quoted = TRUE)
 }

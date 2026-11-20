@@ -6,6 +6,8 @@
 
 import { decodeBase64 } from './load.js'
 
+// The labels below keep their pre-rename spelling (pqview), so files locked by
+// earlier versions still open. Never change them.
 const MAC_PREFIX = 'pqview1'
 
 export class WrongPassword extends Error {
@@ -38,7 +40,7 @@ export async function unlockPayload(x, password) {
   const subtle = subtleCrypto()
   if (!subtle) throw new Error('This page cannot decrypt data here: open the file directly, or from an https address.')
   const e = x.enc
-  if (!e || e.v !== 1) throw new Error('This protected file needs a newer version of pqview.')
+  if (!e || e.v !== 1) throw new Error('This protected file needs a newer version of Plank.')
   const te = new TextEncoder()
   const salt = decodeBase64(e.salt)
   const iv = decodeBase64(e.iv)

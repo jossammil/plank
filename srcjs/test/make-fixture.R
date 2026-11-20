@@ -16,7 +16,7 @@ nanoparquet::write_parquet(
   compression = "snappy",
   options = nanoparquet::parquet_options(num_rows_per_row_group = 40)
 )
-# The same data with gzip pages, as pqview() writes by default.
+# The same data with gzip pages, as plank() writes by default.
 nanoparquet::write_parquet(
   df, "test/fixtures/sample-gzip.parquet",
   compression = "gzip",

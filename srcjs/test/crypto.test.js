@@ -5,7 +5,7 @@ import { unlockPayload, WrongPassword } from '../src/crypto.js'
 import { openDataset } from '../src/load.js'
 import { cellText } from '../src/store.js'
 
-// Written by R: encrypt_payload(pqview(df, title, notes, where)$x, ..., "s3cret pass", iter = 1000)
+// Written by R: encrypt_payload(plank(df, title, notes, where)$x, ..., "s3cret pass", iter = 1000)
 const x = JSON.parse(readFileSync(new URL('./fixtures/encrypted.json', import.meta.url), 'utf8'))
 
 test('the protected payload shows nothing but its title', () => {

@@ -1,4 +1,4 @@
-# pqview developer guide
+# Plank developer guide
 
 How the package works inside, which program does what, how to change and
 rebuild each part, and how to debug it. Read it top to bottom once; after
@@ -23,7 +23,7 @@ Contents
 
 ## 1. The big picture
 
-pqview is two programs in one package:
+Plank is two programs in one package:
 
 - **R code** turns a data frame into compressed **parquet** bytes and hands
   them to **htmlwidgets** as a JSON payload.
@@ -38,18 +38,18 @@ JavaScript and its CSS.
 ```
  R session                                   Browser (no server)
  ─────────                                   ───────────────────
- pqview(df)                                  page loads
+ plank(df)                                  page loads
    │ encode_data()  df ──► parquet bytes       │ htmlwidgets finds the JSON payload
-   │   (nanoparquet, gzip level 3)             │ calls PQView.mount(el, x)
+   │   (nanoparquet, gzip level 3)             │ calls Plank.mount(el, x)
    │ optional: encrypt_payload() (openssl)     │   shell: tabs, file opening
    │ x = { data: base64, meta, title, ... }    │   mountInstance: one viewer
    ▼                                           │     decodeBase64 → openDataset (hyparquet)
- htmlwidgets::createWidget("pqview", x)        │     columns decoded on demand → column store
+ htmlwidgets::createWidget("plank", x)        │     columns decoded on demand → column store
    │                                           │     filters/query/sort → view (row indices)
    ├─ print: RStudio viewer / browser tab      │     Grid draws only the visible cells
    ├─ R Markdown / Quarto chunk                ▼
-   ├─ Shiny output (renderPqview)            exports are written in the browser too
-   └─ save_pqview(): one self-contained .html (CSV, Excel, .rds, parquet, clipboard)
+   ├─ Shiny output (renderPlank)            exports are written in the browser too
+   └─ save_plank(): one self-contained .html (CSV, Excel, .rds, parquet, clipboard)
 ```
 
 The design rule behind everything: **do the work once in R (encoding), and
@@ -61,28 +61,28 @@ anyone can open.
 ## 2. Repository map
 
 ```
-pqview/
+plank-app/
 ├── DESCRIPTION, NAMESPACE, LICENSE      R package metadata (NAMESPACE is generated)
 ├── R/                                   the R package code
-│   ├── pqview.R      pqview() (builds the payload), Shiny bindings, all main docs
+│   ├── plank.R      plank() (builds the payload), Shiny bindings, all main docs
 │   ├── encode.R      data frame → parquet bytes + per-column hints (meta)
 │   ├── encrypt.R     password protection: PBKDF2, AES-256-CTR, HMAC
-│   ├── save.R        save_pqview(): one self-contained HTML file (or .zip)
-│   ├── views.R       pqview_view() and checks for sort/pin/formats/views
-│   └── addin.R       RStudio add-in ("View selection with pqview")
+│   ├── save.R        save_plank(): one self-contained HTML file (or .zip)
+│   ├── views.R       plank_view() and checks for sort/pin/formats/views
+│   └── addin.R       RStudio add-in ("View in Plank")
 ├── man/                                 help pages (generated from R/ by roxygen2)
 ├── tests/testthat/                      R tests
 ├── inst/
-│   ├── htmlwidgets/pqview.js            the htmlwidgets binding (a few lines)
-│   ├── htmlwidgets/pqview.yaml          declares the JS + CSS dependency and its version
-│   ├── htmlwidgets/lib/pqview/
-│   │   ├── pqview-core.js               the BUILT JavaScript bundle (generated, committed)
-│   │   └── pqview.css                   the stylesheet (hand-written, NOT bundled)
+│   ├── htmlwidgets/plank.js            the htmlwidgets binding (a few lines)
+│   ├── htmlwidgets/plank.yaml          declares the JS + CSS dependency and its version
+│   ├── htmlwidgets/lib/plank/
+│   │   ├── plank-core.js               the BUILT JavaScript bundle (generated, committed)
+│   │   └── plank.css                   the stylesheet (hand-written, NOT bundled)
 │   ├── rstudio/addins.dcf               registers the add-in
 │   └── COPYRIGHTS                       licences of the bundled JS libraries
 ├── srcjs/                               JavaScript sources (excluded from the R package)
 │   ├── package.json, package-lock.json  npm dependencies and scripts
-│   ├── build.mjs                        esbuild: src/ → inst/.../pqview-core.js
+│   ├── build.mjs                        esbuild: src/ → inst/.../plank-core.js
 │   ├── src/*.js                         the viewer's modules (section 5)
 │   ├── test/*.test.js                   unit tests (node:test) + fixtures/
 │   └── test-e2e/e2e.mjs                 end-to-end tests in a real browser (Playwright)
@@ -90,25 +90,27 @@ pqview/
 │   ├── demo-data.R                      the synthetic data set (any size)
 │   ├── make-demo.R                      writes demo.html (100k rows), demo-locked.html,
 │   │                                    and demo-expected.json (counts R computed)
-│   ├── make-sample.R                    writes sample.pqv.html (10k rows) and
-│   │                                    viewer.pqv.html (blank), both kept in git
-│   └── *.html                           generated pages (only *.pqv.html are committed)
-├── .github/workflows/                   CI: R-CMD-check.yaml, js.yaml, pages.yaml
+│   ├── make-viewer.R                    writes viewer.plank.html (blank), kept in git
+│   ├── bench.R                          size and speed numbers for the site (R side)
+│   └── *.html                           generated pages (only viewer.plank.html is committed)
+├── site/                                the public website: index template and bench.json
+├── tools/publish-site.sh                builds the site and pushes it to the public repo
+├── .github/workflows/                   CI: R-CMD-check.yaml, js.yaml
 ├── README.md                            user documentation
 └── DEVELOPER-GUIDE.md                   this file
 ```
 
 Generated files you should never edit by hand: `NAMESPACE`, `man/*.Rd`,
-`inst/htmlwidgets/lib/pqview/pqview-core.js`, `examples/*.html`,
+`inst/htmlwidgets/lib/plank/plank-core.js`, `examples/*.html`,
 `examples/demo-expected.json`.
 
 ---
 
 ## 3. The R side
 
-### What `pqview(data, ...)` does
+### What `plank(data, ...)` does
 
-`R/pqview.R`, in order:
+`R/plank.R`, in order:
 
 1. **Checks the arguments** (`match.arg`, `stopifnot`, `check_names_arg`).
 2. `data = NULL` → returns a **blank viewer** payload (no data; the reader
@@ -149,21 +151,21 @@ Generated files you should never edit by hand: `NAMESPACE`, `man/*.Rd`,
      (encrypt-then-MAC; a wrong password fails the MAC check)
    - why not AES-GCM: `openssl::aes_gcm_encrypt` returns no authentication
      tag, so the browser could not verify it.
-7. **`pqview_widget()`** calls `htmlwidgets::createWidget("pqview", x, ...)`
+7. **`plank_widget()`** calls `htmlwidgets::createWidget("plank", x, ...)`
    with a sizing policy (full width, 600 px high by default).
 
-### `save_pqview(x, file, ...)`
+### `save_plank(x, file, ...)`
 
-`R/save.R`: builds the widget (`pqview(x, ...)` unless `x` already is one),
+`R/save.R`: builds the widget (`plank(x, ...)` unless `x` already is one),
 renders it with `htmltools::renderTags()`, and **inlines** the JS and CSS
 (`inline_dependency()`) into one HTML file. It does not run pandoc (fast
-for big data). It also applies the `name.pqv.html` naming rule
+for big data). It also applies the `name.plank.html` naming rule
 (`save_paths()`) and can zip the result (`zip_one()`: the zip package if
 installed, else `utils::zip`).
 
 ### Shiny
 
-`pqviewOutput()` / `renderPqview()` are the usual htmlwidgets pair. The
+`plankOutput()` / `renderPlank()` are the usual htmlwidgets pair. The
 browser sends back `input$<id>_rows`, `<id>_state` and `<id>_row` (see
 `sendShiny` in `index.js`).
 
@@ -171,7 +173,7 @@ browser sends back `input$<id>_rows`, `<id>_state` and `<id>_row` (see
 
 `R/addin.R` + `inst/rstudio/addins.dcf`: takes the selected text in the
 editor, evaluates it (or treats it as a `.parquet` path) and opens
-`pqview()` on it.
+`plank()` on it.
 
 ---
 
@@ -179,11 +181,11 @@ editor, evaluates it (or treats it as a `.parquet` path) and opens
 
 htmlwidgets connects the two halves:
 
-- `inst/htmlwidgets/pqview.yaml` declares one dependency, `pqview-core`,
-  made of `lib/pqview/pqview-core.js` and `lib/pqview/pqview.css`. Its
+- `inst/htmlwidgets/plank.yaml` declares one dependency, `plank-core`,
+  made of `lib/plank/plank-core.js` and `lib/plank/plank.css`. Its
   `version` should match DESCRIPTION.
-- `inst/htmlwidgets/pqview.js` is the binding:
-  `renderValue(x)` → `PQView.mount(el, x)`. `PQView` is the global the
+- `inst/htmlwidgets/plank.js` is the binding:
+  `renderValue(x)` → `Plank.mount(el, x)`. `Plank` is the global the
   bundle defines (esbuild `globalName`).
 - htmlwidgets writes `x` into the page as JSON and calls `renderValue` when
   the page loads (or when Shiny sends new data).
@@ -294,16 +296,16 @@ the same function (`datasetFromColumns` in `load.js`).
 - `state` (in `mountInstance`): shown columns, filter specs, sort, pins,
   formats, search, query, `view`. Undo stores snapshots of it
   (`takeSnapshot` / `stepHistory`).
-- `localStorage` keys, all prefixed `pqview.`:
+- `localStorage` keys, all prefixed `plank.`:
   - display preferences, shared by every viewer: `theme`, `accent`, `ink`,
     `font`, `size`, `density`, `controls`, `minimal`, `query`, `fullQuery`,
     `pickerWidth`, `countsHeight`, `detailWidth`, `naText`, `naCustom`,
     `searchRegex`
   - per data set (keyed by a **fingerprint** of the data, `markers.js`):
-    `pqview.marks.<fp>` and `pqview.views.<fp>`. Password files keep these
+    `plank.marks.<fp>` and `plank.views.<fp>`. Password files keep these
     in memory only.
 
-### CSS (`pqview.css`)
+### CSS (`plank.css`)
 
 - Colours are **tokens** (`--pqv-bg`, `--pqv-fg`, `--pqv-accent`, ...)
   defined once per theme (`.pqv[data-theme="dark"]` etc.). Use tokens,
@@ -332,13 +334,13 @@ the same function (`datasetFromColumns` in `load.js`).
 | Package | Kind | Used for |
 |---|---|---|
 | htmlwidgets | Imports | The widget framework: payload → page, RStudio/R Markdown/Shiny integration |
-| htmltools | Imports | Rendering tags and dependencies (`save_pqview`) |
+| htmltools | Imports | Rendering tags and dependencies (`save_plank`) |
 | jsonlite | Imports | base64 encoding, JSON for the encrypted fields |
 | nanoparquet | Imports | Writing (and reading) parquet with no system libraries |
 | tools, utils | Imports | File names, `utils::zip` fallback, `head` |
 | openssl | Suggests | Password encryption (`R/encrypt.R`) |
 | askpass | Suggests | `password = TRUE` prompts |
-| zip | Suggests | `save_pqview(zip = TRUE)` without a system zip program |
+| zip | Suggests | `save_plank(zip = TRUE)` without a system zip program |
 | rstudioapi | Suggests | The add-in |
 | shiny | Suggests | The Shiny bindings |
 | testthat | Suggests | R tests |
@@ -363,7 +365,7 @@ in DESCRIPTION's `Authors@R` (`ctb`, `cph`).
 
 | Tool | Used for |
 |---|---|
-| esbuild | Bundling and minifying `src/` into `pqview-core.js` |
+| esbuild | Bundling and minifying `src/` into `plank-core.js` |
 | playwright | Driving Chrome and WebKit in the end-to-end tests |
 
 ### Browser features relied on
@@ -396,7 +398,7 @@ The demo page **embeds** the bundle and the CSS, so after any JS or CSS
 change you must rebuild in this order:
 
 ```bash
-cd srcjs && npm run build          # src/*.js → inst/htmlwidgets/lib/pqview/pqview-core.js
+cd srcjs && npm run build          # src/*.js → inst/htmlwidgets/lib/plank/plank-core.js
 cd .. && Rscript examples/make-demo.R   # rebuild examples/demo.html with the new bundle + CSS
 cd srcjs && npm run e2e            # test it in Chrome
 ```
@@ -416,11 +418,12 @@ The most common confusing failure is testing an old demo page.
 | srcjs/ | `SHOTS=/some/dir npm run e2e` | Also save screenshots there |
 | srcjs/ | `npx playwright install webkit` | Download WebKit for Playwright |
 | root | `Rscript examples/make-demo.R` | demo.html, demo-locked.html, demo-expected.json |
-| root | `Rscript examples/make-sample.R` | sample.pqv.html and viewer.pqv.html (committed) |
+| root | `Rscript examples/make-viewer.R` | viewer.plank.html (committed) |
+| root | `tools/publish-site.sh` | builds the site into `site-dist/` and pushes it to the public `jossammil/plank` repo |
 | root (R) | `devtools::document()` | Regenerate `man/` and `NAMESPACE` from roxygen comments |
 | root (R) | `devtools::test()` | R tests |
 | root (R) | `devtools::load_all()` | Load the package from source without installing |
-| anywhere | `R CMD build pqview && R CMD check --as-cran --no-manual pqview_*.tar.gz` | The full package check |
+| anywhere | `R CMD build plank && R CMD check --as-cran --no-manual plank_*.tar.gz` | The full package check |
 
 ---
 
@@ -432,12 +435,12 @@ The most common confusing failure is testing an old demo page.
    it can be unit-tested.
 2. Add or adjust a unit test in `srcjs/test/`, and an e2e check in
    `srcjs/test-e2e/e2e.mjs` for anything a user sees.
-3. Run the build cycle (section 7). Commit the rebuilt `pqview-core.js`
+3. Run the build cycle (section 7). Commit the rebuilt `plank-core.js`
    (CI fails if it does not match the sources).
 
 ### Change the look (CSS)
 
-Edit `inst/htmlwidgets/lib/pqview/pqview.css` (it is not bundled), rerun
+Edit `inst/htmlwidgets/lib/plank/plank.css` (it is not bundled), rerun
 `make-demo.R`, look at the page, run e2e. Use the colour tokens.
 
 ### Change the R side
@@ -467,14 +470,23 @@ update the versions written in `inst/COPYRIGHTS`.
 The version appears in four places; keep them equal:
 
 - `DESCRIPTION` (`Version:`)
-- `inst/htmlwidgets/pqview.yaml` (`version:`)
+- `inst/htmlwidgets/plank.yaml` (`version:`)
 - `srcjs/package.json` (`"version"`)
 - `srcjs/package-lock.json` (twice, near the top)
 
-### Refresh the published sample
+### Refresh the public site
 
-`Rscript examples/make-sample.R`, commit `examples/sample.pqv.html` and
-`examples/viewer.pqv.html`, push. The Pages workflow republishes them.
+The site is a separate public repository, `jossammil/plank`, served by
+GitHub Pages at <https://jossammil.github.io/plank/>. This repository
+(`plank-app`) is private, so it cannot serve Pages itself on the free plan.
+
+1. Optionally re-measure the size and speed numbers:
+   `Rscript examples/bench.R` then `node srcjs/tools/bench-open.mjs`
+   (both update `site/bench.json`).
+2. `tools/publish-site.sh` rebuilds the demo and the blank viewer, runs
+   `srcjs/tools/build-site.mjs` (the landing page, with the about text and
+   shortcuts taken from `srcjs/src/keys.js`), and pushes `site-dist/` to the
+   public repo. Pages republishes within a minute.
 
 ### Before a release (checklist)
 
@@ -513,9 +525,10 @@ payload made by R (to test that R's encryption decrypts in JavaScript).
 
 | Workflow | Jobs |
 |---|---|
-| `R-CMD-check.yaml` | `R CMD check --as-cran` on macOS, Windows and Ubuntu (two R versions); a job that installs from GitHub with `remotes::install_github()` and saves a viewer |
-| `js.yaml` | Unit tests; a check that the committed bundle matches the sources; e2e in Chromium and WebKit (builds the demo first) |
-| `pages.yaml` | Publishes `sample.pqv.html` (as `index.html`) and `viewer.pqv.html` (as `viewer.html`) to GitHub Pages when they change |
+| `R-CMD-check.yaml` | `R CMD check --as-cran` on Windows and Ubuntu (two R versions); a job on Ubuntu that installs from GitHub with `remotes::install_github()` and saves a viewer. macOS is left out because private repositories pay 10× Actions minutes for it |
+| `js.yaml` | Unit tests; a check that the committed bundle matches the sources; e2e in Chromium and WebKit on Ubuntu (builds the demo first) |
+
+The public site is not built by CI; see **Refresh the public site**.
 
 Results: the Actions tab on GitHub, or `gh run list` / `gh run view <id>
 --log-failed` in a terminal.
@@ -530,7 +543,7 @@ Open `examples/demo.html` in Chrome, then the developer tools (Cmd+Option+I).
 In the Console:
 
 ```js
-const api = document.querySelector('.pqv').pqview   // the first viewer
+const api = document.querySelector('.pqv').plank   // the first viewer
 api.state            // shown columns (cols), filter specs, sort, view, query
 api.ds               // the dataset: api.ds.fields, await api.ds.column('age')
 api.grid             // the table: api.grid.range(), api.grid.geom()
@@ -546,13 +559,13 @@ Useful moves:
   rebuild, rerun `make-demo.R`; stack traces then point at `src/*.js`.
   Set them back before committing.
 - **Reset the reader's settings**: in the Console,
-  `Object.keys(localStorage).filter(k => k.startsWith('pqview.')).forEach(k => localStorage.removeItem(k))`.
+  `Object.keys(localStorage).filter(k => k.startsWith('plank.')).forEach(k => localStorage.removeItem(k))`.
 - **Performance**: `api.timings.lastCompute` after a filter; the
   Performance tab for scrolling.
 
 ### In R
 
-- `devtools::load_all()` then `w <- pqview(df); str(w$x)` shows the payload.
+- `devtools::load_all()` then `w <- plank(df); str(w$x)` shows the payload.
 - `encode_data(df)$meta` shows the column hints.
 - For a password file: `decrypt_payload(w$x, "pw")` (internal) returns the
   hidden fields and parquet bytes.
@@ -562,8 +575,8 @@ Useful moves:
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | A JS change seems to do nothing | demo.html still has the old bundle | `npm run build`, then `Rscript examples/make-demo.R` |
-| CI "bundle matches the sources" fails | `pqview-core.js` not rebuilt or not committed | `npm run build`, commit it |
-| The viewer looks different from the tests (theme, font, minimal view) | Saved preferences in `localStorage` | Clear the `pqview.*` keys (above) |
+| CI "bundle matches the sources" fails | `plank-core.js` not rebuilt or not committed | `npm run build`, commit it |
+| The viewer looks different from the tests (theme, font, minimal view) | Saved preferences in `localStorage` | Clear the `plank.*` keys (above) |
 | An e2e check fails only in WebKit | Timing or layout differences (Safari has no scroll anchoring, clicks do not focus buttons) | Rerun once; if it repeats, reproduce in a small Playwright script with WebKit and log positions |
 | "Could not open file.parquet: ... compression" | brotli or lz4 parquet | Rewrite it with snappy, gzip or zstd |
 | Password page says it cannot decrypt here | No WebCrypto on a plain-http page (for example Shiny over http) | Use https, localhost or a saved file |
@@ -579,7 +592,7 @@ Useful moves:
 - **htmlwidget**: an R object that renders as interactive JavaScript in
   RStudio, R Markdown, Quarto, Shiny or a saved page.
 - **bundle**: all JS modules and libraries combined into one file
-  (`pqview-core.js`) by esbuild.
+  (`plank-core.js`) by esbuild.
 - **payload (`x`)**: the list R sends to the browser as JSON.
 - **view**: the array of row indices currently shown, in order.
 - **column store**: the typed arrays a decoded column lives in.

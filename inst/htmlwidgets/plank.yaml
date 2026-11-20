@@ -1,0 +1,6 @@
+dependencies:
+  - name: plank-core
+    version: 0.14.0
+    src: htmlwidgets/lib/plank
+    script: plank-core.js
+    stylesheet: plank.css

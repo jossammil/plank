@@ -12,6 +12,8 @@
 # parquet bytes.
 
 PQV_KDF_ITER <- 300000L
+# These labels keep their pre-rename spelling (pqview), so files locked by
+# earlier versions still open. Never change them.
 PQV_MAC_PREFIX <- "pqview1"
 
 # Payload fields that reveal something about the data; they travel encrypted.
@@ -29,7 +31,7 @@ read_password <- function(password) {
     if (!requireNamespace("askpass", quietly = TRUE)) {
       stop("`password = TRUE` needs the askpass package; or pass the password as a string.", call. = FALSE)
     }
-    first <- askpass::askpass("Password for the pqview file")
+    first <- askpass::askpass("Password for the plank file")
     if (is.null(first)) stop("No password given.", call. = FALSE)
     again <- askpass::askpass("The same password again")
     if (!identical(first, again)) stop("The two passwords differ.", call. = FALSE)

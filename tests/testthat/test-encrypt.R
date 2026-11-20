@@ -10,8 +10,8 @@ test_that("PBKDF2-HMAC-SHA256 matches the published test vectors", {
 test_that("a protected payload hides the data and everything about it", {
   skip_if_not_installed("openssl")
   df <- data.frame(id = 1:3, region = factor(c("West", "South", "West")), secret_col = c(1.5, NA, 3))
-  w <- pqview(df, title = "Mine", notes = "private note", where = "secret_col > 1",
-              views = list(V = pqview_view(columns = "region")))
+  w <- plank(df, title = "Mine", notes = "private note", where = "secret_col > 1",
+              views = list(V = plank_view(columns = "region")))
   x <- encrypt_payload(w$x, encode_data(df)$bytes, "pw", iter = 1000L)
   json <- as.character(widget_json(x))
   for (leak in c("West", "South", "secret_col", "private note", "region")) {
@@ -36,14 +36,14 @@ test_that("a protected payload hides the data and everything about it", {
   expect_false(identical(x$data, y$data))
 })
 
-test_that("pqview(password =) encrypts; TRUE asks twice", {
+test_that("plank(password =) encrypts; TRUE asks twice", {
   skip_if_not_installed("openssl")
   skip_if_not_installed("askpass")
-  w <- pqview(mtcars, password = "pw")
+  w <- plank(mtcars, password = "pw")
   expect_identical(w$x$enc$iter, PQV_KDF_ITER)
   expect_null(w$x$meta)
-  expect_error(pqview(mtcars, password = ""), "non-empty")
-  expect_error(pqview(NULL, password = "pw"), "needs data")
+  expect_error(plank(mtcars, password = ""), "non-empty")
+  expect_error(plank(NULL, password = "pw"), "needs data")
 
   answers <- c("abc", "abc")
   local_mocked_bindings(askpass = function(...) {

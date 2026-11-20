@@ -8,3 +8,6 @@
 ^\.github$
 ^\.gitattributes$
 ^DEVELOPER-GUIDE\.md$
+^site$
+^site-dist$
+^tools$

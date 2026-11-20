@@ -1,4 +1,4 @@
-/* pqview: layout and theme. All rules are scoped under .pqv so the widget
+/* plank: layout and theme. All rules are scoped under .pqv so the widget
    keeps its look inside R Markdown, Quarto and Shiny pages. */
 
 .pqv {
@@ -2476,8 +2476,9 @@ select.pqv-input {
 }
 
 /* Starship: a starship console. Black, with rounded orange, lilac and
-   periwinkle panels, condensed capitals in the controls. The table keeps the
-   reader's font. */
+   periwinkle panels (Decor), pill buttons (Shapes) and condensed capitals
+   (Controls font): the theme's own choices for those settings. The table
+   keeps the reader's font. */
 .pqv[data-theme="starship"],
 .pqv-ap-preview[data-theme="starship"] {
   --pqv-bg: #000000;
@@ -2501,94 +2502,33 @@ select.pqv-input {
   --pqv-ss-lilac: #cc99cc;
   --pqv-ss-blue: #9999ff;
   --pqv-ss-peach: #ffcc99;
+  --pqv-decor-1: #ff9900;
+  --pqv-decor-2: #cc99cc;
+  --pqv-decor-3: #9999ff;
+  --pqv-decor-btn: #cc99cc;
+  --pqv-decor-btn-hover: #ffcc99;
+  --pqv-decor-btn-fg: #000000;
+  --pqv-decor-on: #ff9900;
+  --pqv-decor-on-fg: #000000;
   --pqv-ss-font: "Antonio", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
-}
-
-/* condensed capitals for the controls and labels, never for typed text */
-.pqv[data-theme="starship"] .pqv-header,
-.pqv[data-theme="starship"] .pqv-btn,
-.pqv[data-theme="starship"] .pqv-toggle,
-.pqv[data-theme="starship"] .pqv-hname,
-.pqv[data-theme="starship"] .pqv-pop-title,
-.pqv[data-theme="starship"] .pqv-tab,
-.pqv[data-theme="starship"] .pqv-pgroup-label,
-.pqv[data-theme="starship"] .pqv-query-label,
-.pqv[data-theme="starship"] .pqv-full-label {
-  font-family: var(--pqv-ss-font);
-  font-stretch: condensed;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 .pqv[data-theme="starship"] .pqv-header .pqv-title {
   color: var(--pqv-ss-orange);
   font-weight: 700;
-  letter-spacing: 0.1em;
 }
 
-/* The elbow: an orange bar over the title band that bends down the left
-   side, then lilac and periwinkle bars down the rows below it. */
-.pqv[data-theme="starship"] .pqv-header {
-  border-top: 7px solid var(--pqv-ss-orange);
-  border-left: 18px solid var(--pqv-ss-orange);
-  border-top-left-radius: 26px;
-}
-
-.pqv[data-theme="starship"] .pqv-toolbar {
-  border-top: 3px solid var(--pqv-bg);
-  border-left: 18px solid var(--pqv-ss-lilac);
-  border-bottom-color: var(--pqv-line);
-  background: var(--pqv-bg);
-}
-
-.pqv[data-theme="starship"] .pqv-querybar,
-.pqv[data-theme="starship"] .pqv-full,
-.pqv[data-theme="starship"] .pqv-counts {
-  border-left: 18px solid var(--pqv-ss-blue);
-}
-
-/* pill buttons: filled lilac, orange when on */
-.pqv[data-theme="starship"] .pqv-btn,
-.pqv[data-theme="starship"] .pqv-toggle {
-  border-color: var(--pqv-ss-lilac);
-  border-radius: 999px;
-  background: var(--pqv-ss-lilac);
-  color: #000000;
-  font-weight: 600;
-}
-
-.pqv[data-theme="starship"] .pqv-btn:hover:not(:disabled),
-.pqv[data-theme="starship"] .pqv-toggle:hover {
-  border-color: var(--pqv-ss-peach);
-  background: var(--pqv-ss-peach);
-  color: #000000;
-}
-
-.pqv[data-theme="starship"] .pqv-toggle[aria-pressed="true"],
-.pqv[data-theme="starship"] .pqv-btn[aria-pressed="true"] {
-  border-color: var(--pqv-ss-orange);
-  background: var(--pqv-ss-orange);
-  color: #000000;
-}
-
-.pqv[data-theme="starship"] .pqv-toggle[aria-pressed="true"]:focus-visible,
-.pqv[data-theme="starship"] .pqv-btn[aria-pressed="true"]:focus-visible {
-  outline-color: var(--pqv-ss-peach);
+.pqv[data-theme="starship"] .pqv-hname {
+  color: var(--pqv-ss-peach);
 }
 
 .pqv[data-theme="starship"] .pqv-input {
   border-color: var(--pqv-ss-lilac);
-  border-radius: 999px;
   background: #000000;
 }
 
 .pqv[data-theme="starship"] .pqv-pop {
   border-color: var(--pqv-ss-lilac);
-  border-radius: 14px;
-}
-
-.pqv[data-theme="starship"] .pqv-hname {
-  color: var(--pqv-ss-peach);
 }
 
 /* the Appearance swatch: a small elbow and a lilac pill */
@@ -4070,15 +4010,182 @@ select.pqv-input {
   margin-top: var(--pqv-top, 0px);
 }
 
-/* Starship: the elbow bends up from the bottom instead */
-.pqv[data-theme="starship"][data-controls="bottom"] > .pqv-header {
+/* ---- fine-tuning (Appearance > More options) ------------------------------ */
+/* Each is set on the root by appearance.js, already resolved: "Theme" becomes
+   the theme's own choice (Starship: decor on, pill shapes, condensed font). */
+
+/* Decor: coloured bands down the left of the bands, an elbow on the title
+   band, and filled buttons. Colours come from the accent unless the theme
+   sets its own. */
+.pqv {
+  --pqv-decor-1: var(--pqv-accent);
+  --pqv-decor-2: color-mix(in srgb, var(--pqv-accent) 55%, var(--pqv-bg));
+  --pqv-decor-3: color-mix(in srgb, var(--pqv-accent) 32%, var(--pqv-bg));
+  --pqv-decor-btn: color-mix(in srgb, var(--pqv-accent) 20%, var(--pqv-bg));
+  --pqv-decor-btn-hover: color-mix(in srgb, var(--pqv-accent) 32%, var(--pqv-bg));
+  --pqv-decor-btn-fg: var(--pqv-fg);
+  --pqv-decor-on: var(--pqv-accent);
+  --pqv-decor-on-fg: var(--pqv-accent-fg);
+}
+
+.pqv[data-decor="on"] > .pqv-header {
+  border-top: 7px solid var(--pqv-decor-1);
+  border-left: 18px solid var(--pqv-decor-1);
+  border-top-left-radius: 26px;
+}
+
+.pqv[data-decor="on"] > .pqv-toolbar {
+  border-top: 3px solid var(--pqv-bg);
+  border-left: 18px solid var(--pqv-decor-2);
+  background: var(--pqv-bg);
+}
+
+.pqv[data-decor="on"] > .pqv-querybar,
+.pqv[data-decor="on"] > .pqv-full,
+.pqv[data-decor="on"] > .pqv-counts {
+  border-left: 18px solid var(--pqv-decor-3);
+}
+
+.pqv[data-decor="on"] .pqv-btn,
+.pqv[data-decor="on"] .pqv-toggle {
+  border-color: var(--pqv-decor-btn);
+  background: var(--pqv-decor-btn);
+  color: var(--pqv-decor-btn-fg);
+  font-weight: 600;
+}
+
+.pqv[data-decor="on"] .pqv-btn:hover:not(:disabled),
+.pqv[data-decor="on"] .pqv-toggle:hover {
+  border-color: var(--pqv-decor-btn-hover);
+  background: var(--pqv-decor-btn-hover);
+  color: var(--pqv-decor-btn-fg);
+}
+
+.pqv[data-decor="on"] .pqv-toggle[aria-pressed="true"],
+.pqv[data-decor="on"] .pqv-btn[aria-pressed="true"] {
+  border-color: var(--pqv-decor-on);
+  background: var(--pqv-decor-on);
+  color: var(--pqv-decor-on-fg);
+}
+
+.pqv[data-decor="on"] .pqv-toggle[aria-pressed="true"]:focus-visible,
+.pqv[data-decor="on"] .pqv-btn[aria-pressed="true"]:focus-visible {
+  outline-color: var(--pqv-fg);
+}
+
+/* with the controls at the bottom the elbow bends up from below */
+.pqv[data-decor="on"][data-controls="bottom"] > .pqv-header {
   border-top: 0;
-  border-bottom: 7px solid var(--pqv-ss-orange);
+  border-bottom: 7px solid var(--pqv-decor-1);
   border-top-left-radius: 0;
   border-bottom-left-radius: 26px;
 }
 
-.pqv[data-theme="starship"][data-controls="bottom"] > .pqv-toolbar {
+.pqv[data-decor="on"][data-controls="bottom"] > .pqv-toolbar {
   border-top: 1px solid var(--pqv-line);
   border-bottom: 3px solid var(--pqv-bg);
+}
+
+/* Shapes: the corners of buttons, boxes and popovers */
+.pqv[data-shape="square"] { --pqv-radius: 2px; --pqv-pop-radius: 2px; }
+.pqv[data-shape="rounded"] { --pqv-radius: 8px; --pqv-pop-radius: 12px; }
+.pqv[data-shape="pill"] { --pqv-radius: 999px; --pqv-pop-radius: 14px; }
+
+.pqv[data-shape] .pqv-btn,
+.pqv[data-shape] .pqv-toggle,
+.pqv[data-shape] .pqv-input,
+.pqv[data-shape] .pqv-search,
+.pqv[data-shape] .pqv-query-input {
+  border-radius: var(--pqv-radius);
+}
+
+.pqv[data-shape] .pqv-pop {
+  border-radius: var(--pqv-pop-radius);
+}
+
+/* Controls font: the title band, toolbar, column names, popover titles and
+   tabs. The table's own font is the Font setting. */
+.pqv[data-uifont] > .pqv-header,
+.pqv[data-uifont] .pqv-btn,
+.pqv[data-uifont] .pqv-toggle,
+.pqv[data-uifont] .pqv-hname,
+.pqv[data-uifont] .pqv-pop-title,
+.pqv[data-uifont] .pqv-tab,
+.pqv[data-uifont] .pqv-pgroup-label,
+.pqv[data-uifont] .pqv-query-label,
+.pqv[data-uifont] .pqv-full-label {
+  font-family: var(--pqv-ui-font);
+}
+
+.pqv[data-uifont="sans"] { --pqv-ui-font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+.pqv[data-uifont="mono"] { --pqv-ui-font: var(--pqv-mono-font); }
+.pqv[data-uifont="serif"] { --pqv-ui-font: var(--pqv-serif-font, Georgia, "Times New Roman", serif); }
+.pqv[data-uifont="condensed"] {
+  --pqv-ui-font: "Antonio", "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* condensed comes in capitals, never for typed text */
+.pqv[data-uifont="condensed"] > .pqv-header,
+.pqv[data-uifont="condensed"] .pqv-btn,
+.pqv[data-uifont="condensed"] .pqv-toggle,
+.pqv[data-uifont="condensed"] .pqv-hname,
+.pqv[data-uifont="condensed"] .pqv-pop-title,
+.pqv[data-uifont="condensed"] .pqv-tab,
+.pqv[data-uifont="condensed"] .pqv-pgroup-label,
+.pqv[data-uifont="condensed"] .pqv-query-label,
+.pqv[data-uifont="condensed"] .pqv-full-label {
+  font-stretch: condensed;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pqv[data-uifont="condensed"] > .pqv-header .pqv-title {
+  letter-spacing: 0.1em;
+}
+
+/* the More options section of the Appearance window */
+.pqv-appearance {
+  width: 356px;
+}
+
+.pqv-ap-more {
+  margin-top: 6px;
+  border-top: 1px solid var(--pqv-line);
+  padding-top: 4px;
+}
+
+.pqv-ap-more-sum {
+  padding: 4px 0;
+  color: var(--pqv-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pqv-ap-more-sum:hover {
+  color: var(--pqv-fg);
+}
+
+.pqv-ap-more-sum:focus-visible {
+  outline: 2px solid var(--pqv-accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+.pqv-ap-more .pqv-ap-seg .pqv-ap-choice {
+  padding: 0 7px;
+}
+
+/* the about lines at the top of the help sheet */
+.pqv-keys-about {
+  margin: 4px 0 8px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--pqv-line);
+  color: var(--pqv-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.pqv-keys-about em {
+  color: var(--pqv-fg);
 }

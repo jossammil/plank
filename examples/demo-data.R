@@ -1,4 +1,4 @@
-# The synthetic data set behind examples/demo.html and examples/sample.pqv.html:
+# The synthetic data set behind examples/demo.html and examples/sample.plank.html:
 # n rows and 30 columns covering every column type. Used by make-demo.R and
 # make-sample.R.
 demo_data <- function(n = 100000) {

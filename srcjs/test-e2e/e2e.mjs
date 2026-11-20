@@ -48,10 +48,10 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()) })
 page.on('pageerror', (e) => errors.push(String(e)))
 
 const url = pathToFileURL(demo).href
-const ready = (p) => p.waitForFunction(() => document.querySelector('.pqv')?.pqview?.timings.firstTable, null, { timeout: 30000 })
+const ready = (p) => p.waitForFunction(() => document.querySelector('.pqv')?.plank?.timings.firstTable, null, { timeout: 30000 })
 await page.goto(url)
 await ready(page)
-const timings = await page.evaluate(() => document.querySelector('.pqv').pqview.timings)
+const timings = await page.evaluate(() => document.querySelector('.pqv').plank.timings)
 console.log('timings (ms):', JSON.stringify(timings, (k, v) => (typeof v === 'number' ? +v.toFixed(1) : v)))
 
 const pqv = page.locator('.pqv')
@@ -76,7 +76,7 @@ const exportAs = async (format) => {
 }
 const settle = () => page.waitForTimeout(180 * slow)
 const count = async () => +(/^([\d,]+)/.exec(await page.locator('.pqv-status').innerText())[1].replace(/,/g, ''))
-const lastCompute = () => page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastCompute.toFixed(2))
+const lastCompute = () => page.evaluate(() => +document.querySelector('.pqv').plank.timings.lastCompute.toFixed(2))
 const hcell = (name) => page.locator(`.pqv-hcell[data-name="${name}"]`)
 const clearBtn = page.locator('.pqv-btn', { hasText: 'Clear filters' })
 const clear = async () => {
@@ -86,7 +86,7 @@ const clear = async () => {
 }
 const firstRow = async () => {
   await page.evaluate(() => {
-    const g = document.querySelector('.pqv').pqview.grid
+    const g = document.querySelector('.pqv').plank.grid
     g.scroller.scrollLeft = 0
     g.render()
   })
@@ -125,8 +125,8 @@ check('monospace font by default', await pqv.evaluate((e) => e.classList.contain
 const titleTop = await page.locator('.pqv-header .pqv-title').evaluate((e) => e.getBoundingClientRect().top)
 check('a little room above the title (4-16px)', titleTop >= 4 && titleTop <= 16, true)
 check('no Wider/Narrower button', await page.locator('.pqv-picker button', { hasText: /Wider|Narrower/ }).count(), 0)
-check('title in the top band', await page.locator('.pqv-header .pqv-title').innerText(), 'Synthetic demo')
-check('notes beside the title', /100,000 synthetic records/.test(await page.locator('.pqv-header .pqv-notes').innerText()), true)
+check('title in the top band', await page.locator('.pqv-header .pqv-title').innerText(), 'Plank demo')
+check('notes beside the title', /100,000 fake records/.test(await page.locator('.pqv-header .pqv-notes').innerText()), true)
 check('data size shown', /^data\s*\d+(\.\d+)? MB$/i.test((await page.locator('.pqv-sizes .pqv-size').first().innerText()).replace(/\s+/g, ' ')), true)
 if (shots) await page.screenshot({ path: `${shots}/${engine}-01-initial.png` })
 
@@ -143,7 +143,7 @@ check('options button highlighted', await hcell('age').locator('.pqv-opt.pqv-on'
 await option('age', 'exclude')
 await settle()
 const ageNA = await page.evaluate(() => {
-  const ds = document.querySelector('.pqv').pqview.ds
+  const ds = document.querySelector('.pqv').plank.ds
   return ds.peek('age').nullCount
 })
 check('inverted and missing hidden', await count(), expected.total - expected.age_30_40 - ageNA)
@@ -250,7 +250,7 @@ for (const [text, key] of queries) {
   await query(text)
   check(`WHERE ${text}`, await count(), expected[key])
 }
-console.log('   query ms:', await page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastQuery.toFixed(2)))
+console.log('   query ms:', await page.evaluate(() => +document.querySelector('.pqv').plank.timings.lastQuery.toFixed(2)))
 
 await query("age > 30 AND region IN ('West', 'South')")
 await page.locator('.pqv-querybar .pqv-toggle', { hasText: 'NOT' }).click()
@@ -290,7 +290,7 @@ await settle()
 await hcell('comment').locator('.pqv-hname').click()
 await settle()
 check('sort text asc: first record', (await firstRow())[1], expected.first_sorted_comment)
-console.log('   text sort ms:', await page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastCompute.toFixed(0)))
+console.log('   text sort ms:', await page.evaluate(() => +document.querySelector('.pqv').plank.timings.lastCompute.toFixed(0)))
 await hcell('comment').locator('.pqv-hname').click()
 await settle()
 check('sort text desc: first record', (await firstRow())[1], expected.last_sorted_comment)
@@ -301,20 +301,20 @@ await settle()
 await query("region = 'West'")
 const estText = await page.locator('.pqv-sizes .pqv-size').nth(1).locator('.pqv-size-v').innerText()
 const download = await exportAs('csv')
-check('CSV file name', download.suggestedFilename(), 'Synthetic_demo.csv')
+check('CSV file name', download.suggestedFilename(), 'Plank_demo.csv')
 const csvBytes = readFileSync(await download.path())
 const csv = csvBytes.toString('utf8').trimEnd().split('\r\n')
 check('CSV rows = filtered rows', csv.length - 1, expected.region_exact_west)
 const est = (() => { const m = /([\d.]+) (KB|MB)/.exec(estText); return +m[1] * (m[2] === 'MB' ? 1048576 : 1024) })()
 console.log(`   export estimate ${estText}, actual ${(csvBytes.length / 1048576).toFixed(2)} MB`)
 check('export size estimate within 5%', Math.abs(est - csvBytes.length) / csvBytes.length < 0.05, true)
-const outDir = mkdtempSync(path.join(os.tmpdir(), 'pqview-e2e-'))
+const outDir = mkdtempSync(path.join(os.tmpdir(), 'plank-e2e-'))
 for (const f of ['xlsx', 'rds', 'parquet']) {
   const d = await exportAs(f)
-  check(`${f} file name`, d.suggestedFilename(), `Synthetic_demo.${f}`)
+  check(`${f} file name`, d.suggestedFilename(), `Plank_demo.${f}`)
   copyFileSync(await d.path(), path.join(outDir, `west.${f}`))
 }
-console.log('   export ms (parquet):', await page.evaluate(() => +document.querySelector('.pqv').pqview.timings.lastExport.toFixed(1)))
+console.log('   export ms (parquet):', await page.evaluate(() => +document.querySelector('.pqv').plank.timings.lastExport.toFixed(1)))
 const shownCols = (await page.locator('.pqv-hcell[data-name]').evaluateAll((els) => els.map((e) => e.dataset.name))).join('|')
 let rcheck = null
 try {
@@ -398,7 +398,7 @@ await option('income', 'and')
 await settle()
 check('single OR acts like AND', await count(),
   await page.evaluate(() => {
-    const p = document.querySelector('.pqv').pqview
+    const p = document.querySelector('.pqv').plank
     const age = p.ds.peek('age'), inc = p.ds.peek('income'), reg = p.ds.peek('region')
     const west = reg.levels.indexOf('West')
     let k = 0
@@ -485,7 +485,7 @@ await clear()
 
 // set one cell by hand
 await query("region = 'South'")
-await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollLeft = g.scroller.scrollWidth; g.render() })
+await page.evaluate(() => { const g = document.querySelector('.pqv').plank.grid; g.scroller.scrollLeft = g.scroller.scrollWidth; g.render() })
 await page.locator('.pqv-row').first().locator('.pqv-markcell').click()
 await page.locator('.pqv-cellmark input').fill('maybe')
 await page.locator('.pqv-cellmark input').press('Enter')
@@ -500,9 +500,9 @@ check('CSV includes the marker column', mcsv[0].split(',').slice(-1)[0], 'review
 check('CSV marked rows', mcsv.length - 1, expected.region_exact_west + 1)
 await clear()
 
-const markStorage = await page.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
+const markStorage = await page.evaluate(() => { try { localStorage.setItem('plank.t', '1'); return true } catch { return false } })
 if (markStorage) {
-  await page.evaluate(() => document.querySelector('.pqv').pqview.saveMarks())
+  await page.evaluate(() => document.querySelector('.pqv').plank.saveMarks())
   await page.reload()
   await ready(page)
   check('marker column restored after reload', await hcell('review').count(), 1)
@@ -523,7 +523,7 @@ await undoBtn.click()
 await step()
 check('undo restores a deleted marker column', await hcell('review').count() + await page.locator('.pqv-pitem[data-name="review"]').count(), 2)
 check('undo restores its marks', await page.evaluate(() => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   return p.ds.n - p.markers.get('review').nullCount
 }) >= expected.region_exact_west, true)
 await redoBtn.click()
@@ -555,7 +555,7 @@ check('None unticks every column despite the search', (await headNames()).length
 await page.locator('.pqv-ptop input').fill('')
 check('found bar hides without a search', await page.locator('.pqv-pfound').isVisible(), false)
 await page.evaluate((names) => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   p.picker.setSelected(names)
   p.picker.emit()
 }, orderBefore)
@@ -695,7 +695,7 @@ const crowOf = (label) => cpanel.locator('tbody tr').filter({ has: page.locator(
 const sorted = (o) => JSON.stringify(Object.entries(o).sort())
 // Finds a group by its label(s) through the panel's API: [index, count]
 const cgroup = (label) => page.evaluate((label) => {
-  const r = document.querySelector('.pqv').pqview.counts.result
+  const r = document.querySelector('.pqv').plank.counts.result
   const j = r.groups.findIndex((g) => r.keys.map((k, i) => k.label(i ? g.b : g.a)).join(' ') === label)
   return j < 0 ? null : [j, r.groups[j].count]
 }, label)
@@ -763,7 +763,7 @@ await csel('Count rows by').selectOption('visit_date')
 await cwait()
 await csel('Group values of the first column by').selectOption('month')
 await cwait()
-check('months of visit_date, plus missing', await page.evaluate(() => document.querySelector('.pqv').pqview.counts.result.groups.length), expected.visit_months)
+check('months of visit_date, plus missing', await page.evaluate(() => document.querySelector('.pqv').plank.counts.result.groups.length), expected.visit_months)
 check('June 2023 visits', (await cgroup('2023-06'))[1], expected.visit_2023_06)
 await csel('Count rows by').selectOption('income')
 await cwait()
@@ -775,7 +775,7 @@ await csel('Group values of the first column by').selectOption('hour')
 await cwait()
 const dstHour = await cgroup('2024-03-10 01:00')
 check('the hour before clocks went forward', dstHour && dstHour[1], expected.updated_dst_hour)
-await page.evaluate((j) => document.querySelector('.pqv').pqview.counts.drill(j, false), dstHour[0])
+await page.evaluate((j) => document.querySelector('.pqv').plank.counts.drill(j, false), dstHour[0])
 await settle()
 check('filtering to that hour finds the same rows', await count(), expected.updated_dst_hour)
 await clear()
@@ -784,7 +784,7 @@ await clear()
 await csel('Count rows by').selectOption('region')
 await cwait()
 const [cdl] = await Promise.all([page.waitForEvent('download'), cpanel.locator('.pqv-btn', { hasText: 'CSV' }).click()])
-check('counts CSV file name', cdl.suggestedFilename(), 'Synthetic_demo_counts.csv')
+check('counts CSV file name', cdl.suggestedFilename(), 'Plank_demo_counts.csv')
 const ccsv = readFileSync(await cdl.path(), 'utf8').trimEnd().split('\r\n')
 check('counts CSV header', ccsv[0], 'region,rows,percent')
 check('counts CSV rows', ccsv.length, 5)
@@ -829,9 +829,9 @@ await vpanel.locator('.pqv-btn', { hasText: 'Save' }).click()
 check('view saved', await vpanel.locator('.pqv-mark-msg').innerText(), "Saved 'Seventy'.")
 check('saved view listed', (await vpanel.locator('.pqv-view-name').allInnerTexts()).join('|'), 'Older West|Region by enrolment|Seventy')
 check('saved view is current', await vpanel.locator('.pqv-view-on .pqv-view-name').innerText(), 'Seventy')
-const rCode = await page.evaluate(() => document.querySelector('.pqv').pqview.views.rCode())
+const rCode = await page.evaluate(() => document.querySelector('.pqv').plank.views.rCode())
 check('R code for the view', rCode, [
-  '"Seventy" = pqview_view(',
+  '"Seventy" = plank_view(',
   '  columns = c("record_id", "state", "region", "age", "income", "enrolled"),',
   '  where = "age >= 70 AND (age >= 65 AND region = \'West\')",',
   '  sort = "-income"',
@@ -887,7 +887,7 @@ await page.locator('.pqv-query-input').press('Enter')
 await clear()
 const defaultCols = ['record_id', 'state', 'region', 'age', 'income', 'score', 'enrolled', 'visit_date', 'updated_at', 'comment']
 await page.evaluate(async (cols) => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   p.picker.setSelected(cols)
   p.picker.emit()
 }, defaultCols)
@@ -898,7 +898,7 @@ const dpanel = page.locator('.pqv-detail')
 const dvalue = (name) => dpanel.locator('.pqv-detail-item').filter({ has: page.locator('.pqv-detail-cname', { hasText: new RegExp(`^${name}$`) }) }).locator('.pqv-detail-value').innerText()
 const rowNum = (k) => page.locator('.pqv-pinrows .pqv-row').nth(k).locator('.pqv-rownum')
 await page.evaluate(async () => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   p.state.sort = []
   p.grid.setSort([])
   await p.runQuery()
@@ -927,7 +927,7 @@ await dpanel.locator('input[aria-label="Find column in this row"]').fill('measur
 check('find a column in the row panel', await dpanel.locator('.pqv-detail-item:visible').count(), 10)
 await dpanel.locator('input[aria-label="Find column in this row"]').fill('')
 const fullIncome = await page.evaluate(() => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   return String(p.ds.peek('score').num[1])
 })
 check('row panel shows full precision', await dvalue('score'), fullIncome)
@@ -974,16 +974,16 @@ order2 = await headNames()
 check('second pinned column follows the first', order2.slice(0, 2).join('|'), 'income|comment')
 check('picker follows the table order', (await pickNames('.pqv-psel')).slice(0, 2).join('|'), 'income|comment')
 const pinX = await hcell('comment').evaluate((e) => e.getBoundingClientRect().left)
-await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollLeft = 600; g.render() })
+await page.evaluate(() => { const g = document.querySelector('.pqv').plank.grid; g.scroller.scrollLeft = 600; g.render() })
 await settle()
 check('pinned header stays put when scrolling sideways', Math.abs(await hcell('comment').evaluate((e) => e.getBoundingClientRect().left) - pinX) < 1, true)
 const pinCellX = await page.locator('.pqv-pinrows .pqv-row').first().locator('.pqv-cell').nth(2).evaluate((e) => e.getBoundingClientRect().left)
 check('pinned cells stay under their header', Math.abs(pinCellX - pinX) < 1, true)
 check('pinned layer shows the right values', await page.locator('.pqv-pinrows .pqv-row').first().locator('.pqv-cell').nth(0).innerText(), '1')
 check('scrolled columns are drawn too', await page.locator('.pqv-rows:not(.pqv-pinrows) .pqv-row').first().locator('.pqv-cell').count() > 0, true)
-await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollLeft = 0; g.render() })
+await page.evaluate(() => { const g = document.querySelector('.pqv').plank.grid; g.scroller.scrollLeft = 0; g.render() })
 await sortBy('income')
-check('sorting a pinned column', (await firstRow())[1], String(+(await page.evaluate(() => Math.min(...document.querySelector('.pqv').pqview.ds.peek('income').num.filter((v) => v === v)))).toPrecision(7)))
+check('sorting a pinned column', (await firstRow())[1], String(+(await page.evaluate(() => Math.min(...document.querySelector('.pqv').plank.ds.peek('income').num.filter((v) => v === v)))).toPrecision(7)))
 await sortBy('income')
 await sortBy('income')
 await step()
@@ -997,11 +997,11 @@ await undoBtn.click()
 await settle()
 check('undo pins it again', (await headNames()).slice(0, 2).join('|'), 'income|comment')
 check('undo restores the pin marks', await hcell('income').evaluate((e) => e.classList.contains('pqv-hpin')), true)
-check('R code includes pinned columns', /pin = c\("income", "comment"\)/.test(await page.evaluate(() => document.querySelector('.pqv').pqview.views.rCode())), true)
-await page.evaluate(() => { const p = document.querySelector('.pqv').pqview; p.togglePin('income'); p.togglePin('comment') })
+check('R code includes pinned columns', /pin = c\("income", "comment"\)/.test(await page.evaluate(() => document.querySelector('.pqv').plank.views.rCode())), true)
+await page.evaluate(() => { const p = document.querySelector('.pqv').plank; p.togglePin('income'); p.togglePin('comment') })
 await settle()
 await page.evaluate(async (cols) => {
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   p.picker.setSelected(cols)
   p.picker.emit()
 }, pinOrder)
@@ -1009,7 +1009,7 @@ await settle()
 check('no pinned columns left', await page.locator('.pqv-hcell.pqv-hpin[data-name]').count(), 0)
 
 // ---- number formats ------------------------------------------------------------
-await page.evaluate(() => { const g = document.querySelector('.pqv').pqview.grid; g.scroller.scrollTop = 0; g.scroller.scrollLeft = 0; g.render() })
+await page.evaluate(() => { const g = document.querySelector('.pqv').plank.grid; g.scroller.scrollTop = 0; g.scroller.scrollLeft = 0; g.render() })
 const incomeIdx = (await headNames()).indexOf('income') + 1
 const incomeBefore = (await firstRow())[incomeIdx]
 await step() // the column changes above are their own undo step
@@ -1019,7 +1019,7 @@ await page.locator('.pqv-opt-format input[type=checkbox]').check()
 check('format options stay open while changing', await page.locator('.pqv-opts').isVisible(), true)
 await page.keyboard.press('Escape')
 await step() // and the format is its own step
-const incomeRaw = await page.evaluate(() => { const p = document.querySelector('.pqv').pqview; return p.ds.peek('income').num[p.state.view[0]] })
+const incomeRaw = await page.evaluate(() => { const p = document.querySelector('.pqv').plank; return p.ds.peek('income').num[p.state.view[0]] })
 const want = incomeRaw.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
 check('income shown with 2 decimals and separators', (await firstRow())[incomeIdx], want)
 check('format leaves filters alone', await count(), expected.total)
@@ -1031,7 +1031,7 @@ await step()
 // Undo until the format is gone: how many steps that takes depends on whether
 // the format and the filter were recorded together (timing).
 let undos = 0
-for (; undos < 4 && await page.evaluate(() => document.querySelector('.pqv').pqview.state.formats.has('income')); undos++) {
+for (; undos < 4 && await page.evaluate(() => document.querySelector('.pqv').plank.state.formats.has('income')); undos++) {
   await undoBtn.click()
   await settle()
 }
@@ -1050,7 +1050,7 @@ const shinyIn = await page.evaluate(async () => {
   const shell = document.querySelector('.pqv-shell')
   const oldId = shell.id
   shell.id = 'tbl'
-  const p = document.querySelector('.pqv').pqview
+  const p = document.querySelector('.pqv').plank
   await p.runQuery()
   p.openDetail(4)
   await new Promise((r) => setTimeout(r, 500))
@@ -1082,7 +1082,7 @@ if (shots) await page.screenshot({ path: `${shots}/${engine}-04-dark-sans.png` }
 await page.keyboard.press('Escape')
 await page.reload()
 await ready(page)
-const storage = await page.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
+const storage = await page.evaluate(() => { try { localStorage.setItem('plank.t', '1'); return true } catch { return false } })
 if (storage) {
   check('theme remembered after reload', await pqv.getAttribute('data-theme'), 'dark')
   check('font choice remembered after reload', await pqv.evaluate((e) => e.classList.contains('pqv-mono')), false)
@@ -1110,7 +1110,7 @@ if (storage) {
 
 // ---- scrolling ----------------------------------------------------------
 const scroll = await page.evaluate(() => {
-  const g = document.querySelector('.pqv').pqview.grid
+  const g = document.querySelector('.pqv').plank.grid
   const max = g.scroller.scrollHeight - g.scroller.clientHeight
   const times = []
   for (let k = 0; k < 200; k++) {
@@ -1133,7 +1133,7 @@ check('scrolling reaches the last row', scroll.lastRow, '100000')
 const remount = await page.evaluate(async () => {
   const el = document.querySelector('.pqv-shell')
   const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
-  const api = window.PQView.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'], pin: ['comment'] })
+  const api = window.Plank.mount(el, { ...x, sort: [{ name: 'income', dir: 'desc' }], counts: ['region'], pin: ['comment'] })
   await api.ready
   await new Promise((resolve) => setTimeout(resolve, 500))
   return {
@@ -1272,7 +1272,7 @@ check('roomy rows are taller', lookAfter.row, 32)
 check('Appearance window stays open while changing settings', await lookPanel.isVisible(), true)
 {
   const aligned = await page.evaluate(() => {
-    const g = document.querySelector('.pqv').pqview.grid
+    const g = document.querySelector('.pqv').plank.grid
     g.scroller.scrollTop = 5000
     g.render()
     const pin = g.pinEl.firstChild.getBoundingClientRect().top
@@ -1304,9 +1304,9 @@ if (storage) {
   check('row spacing kept after reload', kept.row, 22)
   // saved choices from older versions still count
   await page.evaluate(() => {
-    for (const k of ['font', 'size', 'density', 'accent']) localStorage.removeItem('pqview.' + k)
-    localStorage.setItem('pqview.theme', 'light')
-    localStorage.setItem('pqview.mono', '0')
+    for (const k of ['font', 'size', 'density', 'accent']) localStorage.removeItem('plank.' + k)
+    localStorage.setItem('plank.theme', 'light')
+    localStorage.setItem('plank.mono', '0')
   })
   await page.reload()
   await ready(page)
@@ -1327,16 +1327,16 @@ await page.keyboard.press('Escape')
     const el = document.querySelector('.pqv-shell')
     const x = JSON.parse(document.querySelector('script[type="application/json"][data-for]').textContent).x
     const top = () => el.querySelector('.pqv-toolbar').getBoundingClientRect().top
-    await window.PQView.mount(el, { ...x, top_offset: 0 }).ready
+    await window.Plank.mount(el, { ...x, top_offset: 0 }).ready
     const t0 = top()
-    await window.PQView.mount(el, { ...x, top_offset: 40 }).ready
+    await window.Plank.mount(el, { ...x, top_offset: 40 }).ready
     const t40 = top()
-    await window.PQView.mount(el, x).ready
+    await window.Plank.mount(el, x).ready
     const host = document.createElement('div')
     host.style.cssText = 'position:fixed;left:0;top:0;width:700px;height:400px'
     document.body.append(host)
     const { title, notes, ...plain } = x
-    await window.PQView.mount(host, plain).ready
+    await window.Plank.mount(host, plain).ready
     const header = host.querySelector('.pqv-header')
     const out = {
       diff: Math.round(t40 - t0),
@@ -1404,10 +1404,10 @@ await page.keyboard.press('Escape')
   const selNone = gsel.locator('.pqv-pgroup-link')
   const otherAll = gother.locator('.pqv-pgroup-link')
   const findBox = page.locator('.pqv-ptop input')
-  const fileOrder = await page.evaluate(() => document.querySelector('.pqv').pqview.picker.fileOrder.slice())
+  const fileOrder = await page.evaluate(() => document.querySelector('.pqv').plank.picker.fileOrder.slice())
   const setCols = async (names) => {
     await page.evaluate((n) => {
-      const p = document.querySelector('.pqv').pqview
+      const p = document.querySelector('.pqv').plank
       p.picker.setSelected(n)
       p.picker.emit()
     }, names)
@@ -1529,7 +1529,7 @@ await page.keyboard.press('Escape')
   await applyView('Bars by rows')
   await cwait()
   check('a saved view keeps the Bars choice', await barsOn(), 'Rows')
-  check('the view saved bars: rows', await page.evaluate(() => document.querySelector('.pqv').pqview.counts.config().bars), 'rows')
+  check('the view saved bars: rows', await page.evaluate(() => document.querySelector('.pqv').plank.counts.config().bars), 'rows')
   await barsBox.locator('button', { hasText: 'Value' }).click()
 
   // negative statistics: bars diverge from a zero line
@@ -1644,7 +1644,7 @@ await page.reload()
 await ready(page)
 await query("region = 'West'")
 const westNulls = await page.evaluate(() => {
-  const api = document.querySelector('.pqv').pqview
+  const api = document.querySelector('.pqv').plank
   const nulls = (name) => {
     const col = api.ds.peek(name)
     let k = 0
@@ -1736,12 +1736,12 @@ await phone.close()
   }
   // 2,000,000 rows (the demo's rows repeated) makes the grid map the scroll position proportionally.
   const firstShown = () => p.evaluate(() => {
-    const g = document.querySelector('.pqv').pqview.grid
+    const g = document.querySelector('.pqv').plank.grid
     const geo = g.geom()
     return Math.round(g.topFromScroll(g.scroller.scrollTop, geo) / geo.rowH)
   })
   await p.evaluate(() => {
-    const api = document.querySelector('.pqv').pqview
+    const api = document.querySelector('.pqv').plank
     const n = api.ds.n
     const v = new Uint32Array(2000000)
     for (let k = 0; k < v.length; k++) v[k] = k % n
@@ -1752,7 +1752,7 @@ await phone.close()
     g.scroller.scrollTop = g.scrollFromTop(1000000 * geo.rowH, geo)
     g.render()
   })
-  check('2M rows: the grid scales its scrolling', await p.evaluate(() => document.querySelector('.pqv').pqview.grid.geom().scaled), true)
+  check('2M rows: the grid scales its scrolling', await p.evaluate(() => document.querySelector('.pqv').plank.grid.geom().scaled), true)
   const before = await firstShown()
   check('2M rows: scrolled to about row 1,000,000', Math.abs(before - 1000000) < 50, true)
   for (const d of ['roomy', 'compact', 'normal']) {
@@ -1762,7 +1762,7 @@ await phone.close()
   await p.keyboard.press('Escape')
 
   // dragged column widths survive a text-size change
-  const wOf = () => p.evaluate(() => document.querySelector('.pqv').pqview.grid.widths.get('state'))
+  const wOf = () => p.evaluate(() => document.querySelector('.pqv').plank.grid.widths.get('state'))
   const handle = p.locator('.pqv-hcell[data-name="state"] .pqv-resizer')
   const hb = await handle.boundingBox()
   await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
@@ -1856,13 +1856,13 @@ await phone.close()
   })
   const g = (fn) => p.evaluate(fn)
   const cur = () => g(() => {
-    const gr = document.querySelector('.pqv').pqview.grid
+    const gr = document.querySelector('.pqv').plank.grid
     return gr.cursor ? `${gr.cursor.pos}:${gr.cursor.name}` : null
   })
-  const names = await g(() => document.querySelector('.pqv').pqview.state.cols.map((c) => c.name))
+  const names = await g(() => document.querySelector('.pqv').plank.state.cols.map((c) => c.name))
   const cellBox = async (pos, name) => {
     const r = await p.evaluate(({ pos, name }) => {
-      const gr = document.querySelector('.pqv').pqview.grid
+      const gr = document.querySelector('.pqv').plank.grid
       const c = gr.colIndex(name)
       const sc = gr.scroller.getBoundingClientRect()
       const geo = gr.geom()
@@ -1887,13 +1887,13 @@ await phone.close()
   await p.keyboard.press('Shift+ArrowDown')
   await p.keyboard.press('Shift+ArrowLeft')
   const range = await g(() => {
-    const r = document.querySelector('.pqv').pqview.grid.range()
+    const r = document.querySelector('.pqv').plank.grid.range()
     return { r0: r.r0, r1: r.r1, cols: r.cols.map((c) => c.name).join(), cells: r.cells }
   })
   check('Shift+arrows select a block', `${range.r0}-${range.r1} ${range.cols} ${range.cells}`, `2-4 ${names[age]},${names[age + 1]} 6`)
   await p.waitForTimeout(150)
   const want = await g(() => {
-    const api = document.querySelector('.pqv').pqview
+    const api = document.querySelector('.pqv').plank
     const r = api.grid.range()
     let sum = 0
     let k = 0
@@ -1919,9 +1919,9 @@ await phone.close()
   check('Ctrl+Shift+C adds the column names', withHead.split('\n')[0], `${names[age]}\t${names[age + 1]}`)
   check('the readout reports the copy', /Copied 6 cells/.test(await p.locator('.pqv-selinfo').innerText()), true)
   await p.keyboard.press('Escape')
-  check('Esc collapses the block to the cursor', await g(() => document.querySelector('.pqv').pqview.grid.range().cells), 1)
+  check('Esc collapses the block to the cursor', await g(() => document.querySelector('.pqv').plank.grid.range().cells), 1)
   await p.keyboard.press('Control+End')
-  const n = await g(() => document.querySelector('.pqv').pqview.state.view.length)
+  const n = await g(() => document.querySelector('.pqv').plank.state.view.length)
   check('Ctrl+End goes to the last cell', await cur(), `${n - 1}:${names[names.length - 1]}`)
   check('the last row is scrolled into view', await p.locator('.pqv-cur:not([hidden])').count() >= 1, true)
   await p.keyboard.press('Control+Home')
@@ -1940,7 +1940,7 @@ await phone.close()
   await p.mouse.down()
   await p.mouse.move(b.x, b.y, { steps: 5 })
   await p.mouse.up()
-  check('dragging selects a block', await g(() => document.querySelector('.pqv').pqview.grid.range().cells), 8)
+  check('dragging selects a block', await g(() => document.querySelector('.pqv').plank.grid.range().cells), 8)
 
   // shortcuts
   await p.locator('.pqv-scroller').focus()
@@ -1949,9 +1949,15 @@ await phone.close()
   await p.keyboard.press('Escape')
   check('Esc closes it', await p.locator('.pqv-keys').count(), 0)
   const helpBtn = p.locator('.pqv-header .pqv-pref-help')
-  check('a ? button in the top band', await helpBtn.getAttribute('aria-label'), 'Keyboard shortcuts')
+  check('a ? button in the top band', await helpBtn.getAttribute('aria-label'), 'About Plank and keyboard shortcuts')
   await helpBtn.click()
   check('the ? button opens the shortcut sheet', await p.locator('.pqv-keys').isVisible(), true)
+  {
+    const about = await p.locator('.pqv-keys .pqv-keys-about').innerText()
+    check('  it starts with what Plank is', /^Plank is a data viewer/.test(about) && /plank file \(\.plank\.html\)/.test(about), true)
+    check('  and the credit', /Frankensteined by MillJS\.$/.test(about.trim()), true)
+    check('  the about lines come first', await p.locator('.pqv-keys-body > *').first().evaluate((e) => e.className), 'pqv-keys-about')
+  }
   check('  and is marked expanded', await helpBtn.getAttribute('aria-expanded'), 'true')
   {
     const sb = await p.locator('.pqv-keys').boundingBox()
@@ -1964,7 +1970,7 @@ await phone.close()
   await p.keyboard.press('g')
   await p.locator('.pqv-goto input').fill('500')
   await p.keyboard.press('Enter')
-  check('G goes to a row by its number', await g(() => document.querySelector('.pqv').pqview.grid.range().row), 499)
+  check('G goes to a row by its number', await g(() => document.querySelector('.pqv').plank.grid.range().row), 499)
   await p.keyboard.press('/')
   check('/ focuses the search', await g(() => document.activeElement.classList.contains('pqv-search')), true)
   await p.locator('.pqv-scroller').focus()
@@ -2006,11 +2012,11 @@ await phone.close()
   await p.keyboard.type('#120')
   check('palette: a number offers Go to row', await p.locator('.pqv-palette-item[aria-selected="true"] .pqv-palette-label').innerText(), 'Go to row 120')
   await p.keyboard.press('Enter')
-  check('palette: Go to row', await g(() => document.querySelector('.pqv').pqview.grid.range().row), 119)
+  check('palette: Go to row', await g(() => document.querySelector('.pqv').plank.grid.range().row), 119)
   await p.keyboard.press('Control+k')
   await p.keyboard.press('Escape')
   check('Esc closes the palette', await p.locator('.pqv-palette').count(), 0)
-  await g(() => document.querySelector('.pqv').pqview.appearance.reset())
+  await g(() => document.querySelector('.pqv').plank.appearance.reset())
   await ctx.close()
 }
 
@@ -2048,12 +2054,12 @@ await phone.close()
     await (await chooser).setFiles(files)
   }
   const waitTabs = (k) => p.waitForFunction((k) => document.querySelectorAll('.pqv-shell > .pqv').length === k &&
-    document.querySelector('.pqv-shell').pqview.timings && document.querySelector('.pqv-shell').pqview.timings.firstTable, k, { timeout: 15000 })
+    document.querySelector('.pqv-shell').plank.timings && document.querySelector('.pqv-shell').plank.timings.firstTable, k, { timeout: 15000 })
   const activeApi = (fn) => p.evaluate(fn)
 
   await openWith([csv])
   await waitTabs(2)
-  check('open: the file becomes a second tab', (await tabNames()).join('|'), 'Synthetic demo|people.csv')
+  check('open: the file becomes a second tab', (await tabNames()).join('|'), 'Plank demo|people.csv')
   check('open: tabs show once there are two', await p.locator(`${shown} .pqv-tabs`).isVisible(), true)
   check('tabs sit at the foot, under the table', await p.evaluate((sel) => {
     const root = document.querySelector(sel)
@@ -2067,9 +2073,9 @@ await phone.close()
     return !toast || toast.hidden || toast.getBoundingClientRect().bottom <= root.querySelector('.pqv-tabs').getBoundingClientRect().top
   }, shown), true)
   check('open: its rows are counted', await p.locator(`${shown} .pqv-status`).innerText(), '3 rows')
-  check('open: CSV column types are guessed', await activeApi(() => document.querySelector('.pqv-shell').pqview.ds.fields.map((f) => f.tag).join()), 'chr,int,date,lgl')
+  check('open: CSV column types are guessed', await activeApi(() => document.querySelector('.pqv-shell').plank.ds.fields.map((f) => f.tag).join()), 'chr,int,date,lgl')
   check('open: quoted text with a comma survives', await activeApi(async () => {
-    const api = document.querySelector('.pqv-shell').pqview
+    const api = document.querySelector('.pqv-shell').plank
     const col = await api.ds.column('name')
     return col.levels ? col.levels[col.codes[2]] : null
   }), 'Lin, Q')
@@ -2080,11 +2086,11 @@ await phone.close()
 
   await openWith([tsv, xlsx, zstd], 'button')
   await waitTabs(5)
-  await p.waitForFunction(() => document.querySelector('.pqv-shell').pqview.ds.n === 5, null, { timeout: 15000 })
-  check('open: several files at once, each a tab', (await tabNames()).join('|'), 'Synthetic demo|people.csv|plain.tsv|book.xlsx|zstd.parquet')
+  await p.waitForFunction(() => document.querySelector('.pqv-shell').plank.ds.n === 5, null, { timeout: 15000 })
+  check('open: several files at once, each a tab', (await tabNames()).join('|'), 'Plank demo|people.csv|plain.tsv|book.xlsx|zstd.parquet')
   check('open: zstd parquet decodes', await p.locator(`${shown} .pqv-status`).innerText(), '5 rows')
   await p.locator(`${shown} .pqv-tab`, { hasText: 'book.xlsx' }).click()
-  check('open: Excel dates keep their type', await activeApi(() => document.querySelector('.pqv-shell').pqview.ds.fields.map((f) => f.tag).join()), 'int,date')
+  check('open: Excel dates keep their type', await activeApi(() => document.querySelector('.pqv-shell').plank.ds.fields.map((f) => f.tag).join()), 'int,date')
 
   // undo stays with its tab
   await p.locator(`${shown} .pqv-search`).fill('2')
@@ -2093,11 +2099,11 @@ await phone.close()
   await p.keyboard.press(process.platform === 'darwin' ? 'Meta+z' : 'Control+z')
   await p.waitForTimeout(200)
   check('undo acts on the tab in view', await p.locator(`${shown} .pqv-search`).inputValue(), '')
-  check('other tabs are untouched', await p.evaluate(() => document.querySelector('.pqv').pqview.state.search), '')
+  check('other tabs are untouched', await p.evaluate(() => document.querySelector('.pqv').plank.state.search), '')
 
   // closing a tab
   await p.locator(`${shown} .pqv-tabwrap-on .pqv-tabclose`).click()
-  check('close: the tab goes', (await tabNames()).join('|'), 'Synthetic demo|people.csv|plain.tsv|zstd.parquet')
+  check('close: the tab goes', (await tabNames()).join('|'), 'Plank demo|people.csv|plain.tsv|zstd.parquet')
   check('close: the first tab cannot be closed', await p.locator(`${shown} .pqv-tabwrap`).first().locator('.pqv-tabclose').count(), 0)
 
   // drop a file
@@ -2119,7 +2125,7 @@ await phone.close()
   check('open: no tab for it', await p.locator('.pqv-shell > .pqv').count(), 5)
 
   // the blank page
-  await p.evaluate(() => window.PQView.mount(document.querySelector('.pqv-shell'), { title: 'Open data' }))
+  await p.evaluate(() => window.Plank.mount(document.querySelector('.pqv-shell'), { title: 'Open data' }))
   check('blank: a page that opens files', await p.locator('.pqv-blank').isVisible(), true)
   check('blank: titled', await p.locator('.pqv-blank-title').innerText(), 'Open data')
   const chooser = p.waitForEvent('filechooser')
@@ -2149,7 +2155,7 @@ await phone.close()
   await p.keyboard.press('Enter')
   await p.waitForFunction(() => /Wrong password/.test(document.querySelector('.pqv-lock-msg').textContent), null, { timeout: 15000 })
   check('locked: a wrong password is refused', await p.locator('.pqv-lock-msg').innerText(), 'Wrong password. Try again.')
-  await p.locator('.pqv-lock-input').fill('pqview test')
+  await p.locator('.pqv-lock-input').fill('plank test')
   await p.locator('.pqv-lock-btn').click()
   await ready(p)
   check('unlocked: the lock goes', await p.locator('.pqv-lock').count(), 0)
@@ -2157,14 +2163,14 @@ await phone.close()
     `${expected.locked_west.toLocaleString('en-US')} of ${expected.locked_rows.toLocaleString('en-US')} rows`)
   check('unlocked: the hidden notes show', await p.locator('.pqv-notes').innerText(), 'Protected notes')
   check('unlocked: factor levels came through', await p.evaluate(async () => {
-    const col = await document.querySelector('.pqv').pqview.ds.column('state')
+    const col = await document.querySelector('.pqv').plank.ds.column('state')
     return col.factor === true || !!col.levels
   }), true)
   await p.locator('.pqv-toolbar .pqv-btn', { hasText: 'Views' }).click()
   check('unlocked: views are kept for the session only', await p.locator('.pqv-views-group').last().textContent(), 'Saved until the page is closed')
   await p.keyboard.press('Escape')
   check('unlocked: nothing about the data in browser storage', await p.evaluate(() =>
-    Object.keys(window.localStorage).filter((k) => /^pqview\.(marks|views)\./.test(k)).length), 0)
+    Object.keys(window.localStorage).filter((k) => /^plank\.(marks|views)\./.test(k)).length), 0)
   await ctx.close()
 }
 
@@ -2261,7 +2267,7 @@ await phone.close()
     await p.locator('.pqv-toolbar .pqv-btn').first().click() // open the column list
     await p.waitForTimeout(200)
   }
-  const shown = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.selected())
+  const shown = await p.evaluate(() => document.querySelector('.pqv').plank.picker.selected())
   const rv = (names) => 'c(' + names.map((n) => `"${n}"`).join(', ') + ')'
   const topCopy = p.locator('.pqv-ptop > .pqv-pactions:not(.pqv-pfound) .pqv-pcopy')
   check('copy button beside the selected count', await topCopy.count(), 1)
@@ -2274,8 +2280,8 @@ await phone.close()
   // the search strip copies every match
   await p.locator('.pqv-ptop .pqv-input').fill('inc')
   await p.waitForTimeout(150)
-  const found = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.foundNames())
-  const inTable = await p.evaluate(() => document.querySelector('.pqv').pqview.picker.groupTargets().inTable)
+  const found = await p.evaluate(() => document.querySelector('.pqv').plank.picker.foundNames())
+  const inTable = await p.evaluate(() => document.querySelector('.pqv').plank.picker.groupTargets().inTable)
   check('the search finds columns', found.length > 0, true)
   await p.locator('.pqv-pgroup .pqv-pcopy').first().click()
   await p.waitForTimeout(150)
@@ -2328,11 +2334,11 @@ await phone.close()
   if (shots) await p.screenshot({ path: `${shots}/${engine}-30-controls-bottom.png` })
   await p.reload()
   await ready(p)
-  const storageOk = await p.evaluate(() => { try { localStorage.setItem('pqview.t', '1'); return true } catch { return false } })
+  const storageOk = await p.evaluate(() => { try { localStorage.setItem('plank.t', '1'); return true } catch { return false } })
   if (storageOk) check('Controls: bottom is remembered', await p.locator('.pqv').getAttribute('data-controls'), 'bottom')
   // an old Terminal choice opens as Starship
   if (storageOk) {
-    await p.evaluate(() => localStorage.setItem('pqview.theme', 'terminal'))
+    await p.evaluate(() => localStorage.setItem('plank.theme', 'terminal'))
     await p.reload()
     await ready(p)
     check('a saved Terminal theme opens as Starship', await p.locator('.pqv').getAttribute('data-theme'), 'starship')
@@ -2341,6 +2347,85 @@ await phone.close()
   await p.locator('.pqv-header .pqv-pref-look').click()
   await p.locator('.pqv-appearance .pqv-link', { hasText: 'Reset to defaults' }).click()
   check('reset puts the controls back on top', await p.locator('.pqv').getAttribute('data-controls'), 'top')
+  await ctx.close()
+}
+
+// ---- fine-tuning: decor, shapes, controls font, contrast ---------------------------
+{
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 860 }, colorScheme: 'light' })
+  const p = await ctx.newPage()
+  p.on('pageerror', (e) => errors.push(e.message))
+  await p.goto(url)
+  await ready(p)
+  const root = p.locator('.pqv')
+  const lookOpen = async () => {
+    if (!(await p.locator('.pqv-appearance').isVisible())) await p.locator('.pqv-header .pqv-pref-look').click()
+  }
+  const pick = async (group, value) => {
+    await lookOpen()
+    const more = p.locator('.pqv-ap-more')
+    if (!(await more.evaluate((e) => e.open))) await p.locator('.pqv-ap-more-sum').click()
+    await p.locator(`.pqv-appearance .pqv-ap-group[aria-label="${group}"] .pqv-ap-choice[data-value="${value}"]`).click()
+    await p.waitForTimeout(100)
+  }
+  const css = (sel, prop) => p.locator(sel).first().evaluate((e, k) => getComputedStyle(e)[k], prop)
+  const btn = '.pqv-toolbar > .pqv-btn'
+  await lookOpen()
+  check('More options starts folded', await p.locator('.pqv-ap-more').evaluate((e) => e.open), false)
+  await p.locator('.pqv-ap-more-sum').click()
+  check('  and opens', await p.locator('.pqv-ap-group[aria-label="Decor"]').isVisible(), true)
+  check('every setting starts at the theme\'s own', (await p.locator('.pqv-ap-more [aria-checked="true"]').evaluateAll((els) => els.map((e) => e.dataset.value))).join(), 'theme,theme,theme,normal')
+  // Starship, then decor off: no elbow, plain buttons
+  await p.locator('.pqv-appearance .pqv-ap-group[aria-label="Theme"] .pqv-ap-choice[data-value="starship"]').click()
+  check('Starship: decor on by default', await root.getAttribute('data-decor'), 'on')
+  check('  elbow on the title band', parseFloat(await css('.pqv-header', 'borderLeftWidth')) >= 12, true)
+  await pick('Decor', 'off')
+  check('Decor off: no elbow', parseFloat(await css('.pqv-header', 'borderLeftWidth')) < 2, true)
+  check('Decor off: buttons not filled lilac', await css(btn, 'backgroundColor') !== 'rgb(204, 153, 204)', true)
+  check('Decor off: Starship keeps its pill shapes', parseFloat(await css(btn, 'borderTopLeftRadius')) >= 12, true)
+  if (shots) await p.screenshot({ path: `${shots}/${engine}-32-starship-plain.png` })
+  // Classic with decor on
+  await p.locator('.pqv-appearance .pqv-ap-group[aria-label="Theme"] .pqv-ap-choice[data-value="classic"]').click()
+  await pick('Decor', 'on')
+  check('Classic + Decor on: elbow', parseFloat(await css('.pqv-header', 'borderLeftWidth')) >= 12, true)
+  check('  in the accent colour', await css('.pqv-header', 'borderLeftColor'), 'rgb(29, 95, 209)')
+  if (shots) await p.screenshot({ path: `${shots}/${engine}-33-classic-decor.png` })
+  await pick('Decor', 'theme')
+  // shapes
+  await pick('Shapes', 'pill')
+  check('Shapes: pill', parseFloat(await css(btn, 'borderTopLeftRadius')) >= 12, true)
+  await pick('Shapes', 'square')
+  check('Shapes: square', parseFloat(await css(btn, 'borderTopLeftRadius')) <= 3, true)
+  // controls font
+  await pick('Controls font', 'condensed')
+  check('Controls font: condensed capitals', await css(btn, 'textTransform'), 'uppercase')
+  await pick('Controls font', 'serif')
+  check('Controls font: serif', /Georgia|Palatino|serif/i.test(await css(btn, 'fontFamily')) && (await css(btn, 'textTransform')) !== 'uppercase', true)
+  check('  the table font is its own setting', await root.evaluate((e) => e.classList.contains('pqv-mono')), true)
+  // contrast
+  const line = () => css('.pqv-toolbar', 'borderBottomColor')
+  const normal = await line()
+  await pick('Contrast', 'high')
+  const high = await line()
+  await pick('Contrast', 'soft')
+  const soft = await line()
+  // rgb(0-255) or color(srgb 0-1) as the browser reports a mixed colour
+  const lum = (c) => { const m = c.match(/[\d.]+/g).map(Number); const k = c.startsWith('color(') ? 255 : 1; return (m[0] + m[1] + m[2]) * k }
+  check('Contrast: high lines are darker, soft lighter (light theme)', lum(high) < lum(normal) && lum(soft) > lum(normal), true)
+  await p.locator('.pqv-appearance .pqv-link', { hasText: 'Reset to defaults' }).click()
+  check('reset clears the fine-tuning', [await root.getAttribute('data-decor'), await root.getAttribute('data-shape'), await root.getAttribute('data-uifont'), await root.getAttribute('data-contrast')].join(), 'off,,,normal')
+  await p.keyboard.press('Escape')
+  // settings saved under the old name (pqview.*) carry over
+  const storageOk = await p.evaluate(() => { try { localStorage.setItem('plank.t', '1'); return true } catch { return false } })
+  if (storageOk) {
+    await p.evaluate(() => {
+      for (const k of Object.keys(localStorage)) if (k.startsWith('plank.')) localStorage.removeItem(k)
+      localStorage.setItem('pqview.theme', 'vintage')
+    })
+    await p.reload()
+    await ready(p)
+    check('a theme saved by pqview carries over to Plank', await root.getAttribute('data-theme'), 'vintage')
+  }
   await ctx.close()
 }
 
